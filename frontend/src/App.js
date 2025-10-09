@@ -36,10 +36,20 @@ function App() {
 
   useEffect(() => {
     // Basic connection state
+    const resolveEndpoint = () => {
+      const envUrl = process.env.REACT_APP_SOCKET_URL;
+      if (envUrl) return envUrl;
+      if (typeof window !== 'undefined' && window.location && window.location.port === '5000') {
+        return window.location.origin;
+      }
+      return 'http://localhost:5000';
+    };
+
     const onConnect = () => { setConnected(true); setError(''); };
     const onDisconnect = () => setConnected(false);
     const onConnectError = (err) => {
-      setError(`Connexion socket échouée: ${err?.message || err || 'inconnue'}. Assurez-vous que le backend écoute sur http://localhost:5000`);
+      const endpoint = resolveEndpoint();
+      setError(`Connexion socket échouée: ${err?.message || err || 'inconnue'}. Backend attendu: ${endpoint}`);
     };
     const onReconnect = () => setError('');
     const onReconnectAttempt = (n) => setError(`Tentative de reconnexion (#${n})...`);
