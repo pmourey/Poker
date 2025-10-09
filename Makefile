@@ -47,3 +47,35 @@ smoke-verbose:
 	  tail -n 200 /tmp/poker_smoke_server.log || true; \
 	  exit 1; \
 	fi
+
+# Variante sans Redis: ne vérifie pas la connectivité Redis et lance le serveur avec REDIS_URL vidé
+.PHONY: smoke-no-redis
+smoke-no-redis:
+	@set -euo pipefail; \
+	echo "[smoke-no-redis] Installation des dépendances Python..."; \
+	$(PY) -m pip install -r requirements.txt >/dev/null; \
+	echo "[smoke-no-redis] Démarrage du serveur Flask-SocketIO sans Redis (polling-only)..."; \
+	SMOKE_HOST=$${HOST:-127.0.0.1}; \
+	SMOKE_PORT=$${PORT:-5000}; \
+	REDIS_URL= $(PY) start_server.py >/tmp/poker_smoke_server.log 2>&1 & \
+	SERVER_PID=$$!; \
+	echo $$SERVER_PID > .smoke_server.pid; \
+	sleep $(WAIT); \
+	echo "[smoke-no-redis] Exécution du smoke test contre http://$$SMOKE_HOST:$$SMOKE_PORT ..."; \
+	SMOKE_SERVER_URL="http://$$SMOKE_HOST:$$SMOKE_PORT" $(PY) scripts/smoke_socketio.py; \
+	STATUS=$$?; \
+	echo "[smoke-no-redis] Arrêt du serveur (PID=$$SERVER_PID)"; \
+	kill $$SERVER_PID >/dev/null 2>&1 || true; \
+	rm -f .smoke_server.pid; \
+	exit $$STATUS
+
+.PHONY: smoke-verbose-no-redis
+smoke-verbose-no-redis:
+	@set -euo pipefail; \
+	if $(MAKE) -s smoke-no-redis; then \
+	  exit 0; \
+	else \
+	  echo "[smoke-verbose-no-redis] Échec du smoke test — extrait du journal serveur:"; \
+	  tail -n 200 /tmp/poker_smoke_server.log || true; \
+	  exit 1; \
+	fi
