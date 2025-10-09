@@ -8,6 +8,12 @@ from enum import Enum
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+# Importer la session Socket.IO côté serveur (indépendante des cookies)
+try:
+    from flask_socketio import session as sio_session  # type: ignore[attr-defined]
+except Exception:
+    # Fallback typings/IDE: utiliser la session Flask (moins précis mais évite l’erreur d’import dans les stubs)
+    from flask import session as sio_session  # type: ignore[assignment]
 
 # Charger d'abord .env, puis fallback sur un fichier 'env' (sans point)
 _loaded = load_dotenv()
@@ -37,18 +43,36 @@ if _cors_env:
 else:
     cors_allowed = '*'
 
+# Déterminer si les WebSockets sont activées (par défaut: auto)
+_ws_env = os.environ.get('WEBSOCKET_ENABLED')
+if _ws_env is not None:
+    WEBSOCKET_ENABLED = _ws_env.strip().lower() in ('1', 'true', 'yes', 'on')
+else:
+    # Activer automatiquement en eventlet/gevent, sinon rester en polling-only
+    WEBSOCKET_ENABLED = SOCKETIO_ASYNC_MODE in ('eventlet', 'gevent', 'gevent_uwsgi')
+
+_upgrade_env = os.environ.get('ALLOW_UPGRADES')
+if _upgrade_env is not None:
+    ALLOW_UPGRADES = _upgrade_env.strip().lower() in ('1', 'true', 'yes', 'on')
+else:
+    # Autoriser les upgrades si WebSocket activé
+    ALLOW_UPGRADES = WEBSOCKET_ENABLED
+
 socketio = SocketIO(
     app,
     cors_allowed_origins=cors_allowed,
     async_mode=SOCKETIO_ASYNC_MODE,
-    websocket=False,
-    allow_upgrades=False,
+    websocket=WEBSOCKET_ENABLED,
+    allow_upgrades=ALLOW_UPGRADES,
     ping_interval=PING_INTERVAL,
     ping_timeout=PING_TIMEOUT,
     logger=False,
     engineio_logger=False,
     message_queue=MESSAGE_QUEUE,
 )
+
+# Petit log de configuration au démarrage
+print(f"[SocketIO] async_mode={SOCKETIO_ASYNC_MODE} websocket={WEBSOCKET_ENABLED} allow_upgrades={ALLOW_UPGRADES} cors={cors_allowed}")
 
 # Forcer les en-têtes CORS sur /socket.io/ même en cas d'erreur (ex: 500)
 @app.after_request
@@ -549,10 +573,10 @@ def game(game_id):
 @socketio.on('connect')
 def handle_connect():
     """Gérer la connexion d'un client"""
-    if 'player_id' not in session:
-        session['player_id'] = str(uuid.uuid4())
+    if 'player_id' not in sio_session:
+        sio_session['player_id'] = str(uuid.uuid4())
 
-    player_id = session['player_id']
+    player_id = sio_session['player_id']
     # Joindre une room personnelle basée sur l'id du joueur pour les événements ciblés
     try:
         join_room(player_id)
@@ -562,7 +586,7 @@ def handle_connect():
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    player_id = session.get('player_id')
+    player_id = sio_session.get('player_id')
     if player_id:
         # Mark player as disconnected in all games
         for game in games.values():
@@ -573,11 +597,11 @@ def handle_disconnect():
 
 @socketio.on('create_game')
 def handle_create_game(data):
-    player_id = session.get('player_id')
+    player_id = sio_session.get('player_id')
     if not player_id:
         # Fallback: générer un id de joueur et rejoindre sa room perso
         player_id = str(uuid.uuid4())
-        session['player_id'] = player_id
+        sio_session['player_id'] = player_id
         try:
             join_room(player_id)
         except Exception as e:
@@ -616,11 +640,11 @@ def handle_create_game(data):
 
 @socketio.on('join_game')
 def handle_join_game(data):
-    player_id = session.get('player_id')
+    player_id = sio_session.get('player_id')
     if not player_id:
         # Fallback session manquante: créer un id et rejoindre room perso
         player_id = str(uuid.uuid4())
-        session['player_id'] = player_id
+        sio_session['player_id'] = player_id
         try:
             join_room(player_id)
         except Exception as e:
@@ -720,7 +744,7 @@ def handle_player_action(data):
         return
 
     game = games[game_id]
-    player_id = session.get('player_id')
+    player_id = sio_session.get('player_id')
 
     # Trouver le joueur
     current_player = None
@@ -840,7 +864,7 @@ def handle_player_action(data):
 @socketio.on('leave_game')
 def handle_leave_game(data):
     game_id = data['game_id']
-    player_id = session.get('player_id')
+    player_id = sio_session.get('player_id')
 
     if game_id not in games:
         emit('error', {'message': 'Partie non trouvée'})
