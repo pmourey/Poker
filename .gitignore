@@ -1,0 +1,40 @@
+# Ajouté par le script de nettoyage
+# Données de jeu locales
+*.db
+*.sqlite*
+games_data.json
+players_data.json
+game_state*.json
+poker_data*.json
+# Cache et temporaires
+__pycache__/
+*.pyc
+*.pyo
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+# Logs
+*.log
+logs/
+# Sessions Flask
+flask_session*
+session*
+*.session
+# Environnement virtuel
+.venv/
+venv/
+env/
+
+# --- Ajouts pour le frontend React / GitHub Pages ---
+# Node modules et build CRA
+frontend/node_modules/
+frontend/build/
+# Fichiers d'environnement CRA
+frontend/.env*
+# Map files volumineux (optionnel)
+frontend/**/*.map
+
+# IDE / outils
+.idea/
+.vscode/

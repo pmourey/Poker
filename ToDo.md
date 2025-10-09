@@ -1,0 +1,1 @@
+Ajoute des fonctionnalités supplémentaires comme l'évaluation automatique des mains gagnantes

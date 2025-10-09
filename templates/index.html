@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Multi-joueur</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; margin: 0; padding: 20px; min-height: 100vh; }
+        .container { max-width: 800px; margin: 0 auto; text-align: center; }
+        .card { background: rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 30px; margin: 20px 0; backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
+        h1 { color: #ffd700; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); font-size: 3em; margin-bottom: 30px; }
+        a.btn { display: inline-block; background: #28a745; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; margin: 8px; }
+        a.btn.secondary { background: #6c757d; }
+        p.muted { color: #e0e0e0; }
+        code { background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🃏 Poker Multi-joueur 🃏</h1>
+        <div class="card">
+            <h2>Interface désormais gérée par React</h2>
+            <p class="muted">Cette page statique remplace l’ancienne interface. Utilisez le frontend React pour créer/rejoindre une partie.</p>
+            <p>
+                • Si vous servez le build via Flask (Option B), ouvrez <a class="btn" href="/">l’interface React</a>.<br>
+                • En développement CRA, ouvrez <a class="btn secondary" href="http://localhost:3000" target="_blank" rel="noopener">http://localhost:3000</a>.
+            </p>
+            <p class="muted">Voir le fichier <code>README.md</code> pour les instructions de lancement.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partie de Poker - {{ game_id }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #0f4c3a, #1a5c3a); color: white; margin: 0; padding: 20px; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .banner { background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 24px; margin: 16px 0; }
+        h1 { margin: 0 0 10px; font-size: 28px; }
+        .muted { color: #d0e8d0; }
+        code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+        .btn { display: inline-block; background: #17a2b8; color: white; text-decoration: none; padding: 10px 18px; border-radius: 8px; margin-right: 8px; }
+        .btn.secondary { background: #6c757d; }
+        .gid { font-weight: bold; color: #ffd700; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="banner">
+            <h1>Partie de Poker</h1>
+            <p>ID de la partie: <span class="gid">{{ game_id }}</span></p>
+            <p class="muted">Cette page n’est plus interactive: l’interface de jeu est désormais gérée par le frontend React.</p>
+            <p>
+                • Si vous servez le build React via Flask (Option B), utilisez <a class="btn" href="/">l’interface React</a>.<br>
+                • En développement CRA, ouvrez <a class="btn secondary" href="http://localhost:3000" target="_blank" rel="noopener">http://localhost:3000</a> et rejoignez la partie avec cet ID.
+            </p>
+            <p class="muted">Voir <code>README.md</code> pour les instructions de lancement.</p>
+        </div>
+    </div>
+</body>
+</html>
