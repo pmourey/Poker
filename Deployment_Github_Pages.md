@@ -45,6 +45,20 @@ Points clés:
 
 ---
 
+## Je ne trouve pas l’onglet “Actions”
+Si vous ne voyez pas l’onglet “Actions” en haut du dépôt (Code, Issues, Pull requests, Actions, …):
+
+- Accédez directement à l’URL des Actions en remplaçant `<compte>` et `<repo>`:
+  - `https://github.com/<compte>/<repo>/actions`
+- Vérifiez que vous avez bien poussé le workflow dans la branche par défaut (fichier `.github/workflows/deploy-frontend.yml`). Sans workflow, l’onglet doit quand même apparaître, mais l’accès direct vous confirmera l’état.
+- Sur un fork: GitHub désactive souvent les Actions par défaut. Ouvrez l’onglet “Actions” et cliquez sur “Enable Actions on Fork” (ou le bouton d’activation). Sinon, dans `Settings → Actions → General`, autorisez l’exécution des workflows sur le fork.
+- Dans une organisation: il se peut que les Actions soient désactivées au niveau organisation. Demandez à un propriétaire d’activer: `Organization settings → Actions → General → Allow GitHub Actions to be used in this organization` puis, côté dépôt, `Settings → Actions → General → Allow all actions and reusable workflows`.
+- Permissions: assurez‑vous d’avoir au moins un rôle “Write” sur le dépôt pour voir/relancer les workflows. Les visiteurs non collaborateurs n’ont pas tous les contrôles.
+- Interface compacte/mobile: sur affichage réduit, les onglets sont regroupés derrière un menu hamburger “More”/“…”; ouvrez ce menu pour trouver “Actions”.
+- Alternative de suivi: `Settings → Pages` affiche aussi l’état des derniers déploiements GitHub Pages et des liens “View deployment”.
+
+---
+
 ## Tester en local (optionnel)
 Si vous souhaitez tester le build Pages avant publication:
 
@@ -108,4 +122,3 @@ Le fichier `.github/workflows/deploy-frontend.yml` exécute les étapes clés:
 ```
 
 C’est tout: poussez sur `main` et votre frontend est publié automatiquement. Le backend reste accessible sur `https://poker06.eu.pythonanywhere.com`.
-
