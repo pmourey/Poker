@@ -7,36 +7,46 @@ from typing import List, Dict
 from enum import Enum
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Charger les variables depuis .env (si présent)
-load_dotenv()
+# Charger d'abord .env, puis fallback sur un fichier 'env' (sans point)
+_loaded = load_dotenv()
+if not _loaded:
+    _fallback = Path(__file__).resolve().parent / 'env'
+    if _fallback.exists():
+        load_dotenv(_fallback)
 
 app = Flask(__name__)
 # Lire le secret depuis l’env, avec fallback pour dev
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
 
-# Configuration SocketIO basique
-# NOTE: en production WSGI (ex: PythonAnywhere), préférez async_mode='threading' pour le polling
+# Configuration SocketIO basique (polling-only)
 SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
-# Timeouts Engine.IO pour le polling (réduisent les "Invalid session" en cas de latence)
 PING_INTERVAL = int(os.environ.get('PING_INTERVAL', '25'))
 PING_TIMEOUT = int(os.environ.get('PING_TIMEOUT', '60'))
-# Message queue optionnelle (Redis) pour partager l’état entre plusieurs workers/processus
 MESSAGE_QUEUE = os.environ.get('REDIS_URL') or None
+
+# CORS: autoriser explicitement une ou plusieurs origines si fourni
+# Exemples:
+#  - CORS_ALLOWED_ORIGINS=*  (autorise tout)
+#  - CORS_ALLOWED_ORIGINS=https://pmourey.github.io
+#  - CORS_ALLOWED_ORIGINS=https://foo,https://bar
+_cors_env = os.environ.get('CORS_ALLOWED_ORIGINS')
+if _cors_env:
+    cors_allowed = '*' if _cors_env.strip() == '*' else [o.strip() for o in _cors_env.split(',') if o.strip()]
+else:
+    cors_allowed = '*'
+
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=cors_allowed,
     async_mode=SOCKETIO_ASYNC_MODE,
-    # Désactiver complètement les websockets et l'upgrade pour WSGI
     websocket=False,
     allow_upgrades=False,
-    # Réglages polling
     ping_interval=PING_INTERVAL,
     ping_timeout=PING_TIMEOUT,
-    # Logger verbeux désactivé par défaut
     logger=False,
     engineio_logger=False,
-    # MQ pour multi-processus si fourni
     message_queue=MESSAGE_QUEUE,
 )
 
