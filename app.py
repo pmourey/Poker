@@ -50,6 +50,32 @@ socketio = SocketIO(
     message_queue=MESSAGE_QUEUE,
 )
 
+# Forcer les en-têtes CORS sur /socket.io/ même en cas d'erreur (ex: 500)
+@app.after_request
+def _force_cors_for_socketio(resp):
+    try:
+        path = request.path or ''
+        if path.startswith('/socket.io/'):
+            origin = request.headers.get('Origin')
+            # Déterminer si l'origine est autorisée par notre config
+            allowed_header = None
+            if cors_allowed == '*':
+                allowed_header = '*'
+            elif isinstance(cors_allowed, (list, tuple)) and origin in cors_allowed:
+                allowed_header = origin
+            # Appliquer l'en-tête si autorisé
+            if allowed_header:
+                resp.headers['Access-Control-Allow-Origin'] = allowed_header
+                # Utile pour caches/proxies
+                resp.headers.add('Vary', 'Origin')
+                # Autoriser certaines en-têtes usuelles côté client
+                resp.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+                resp.headers.setdefault('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    except Exception:
+        # Ne jamais casser la réponse pour une erreur d'ajout d'en-tête
+        pass
+    return resp
+
 # Dossier du build React (Option B)
 BUILD_DIR = os.path.join(os.path.dirname(__file__), 'frontend', 'build')
 
