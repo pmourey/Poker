@@ -12,7 +12,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
 
 # Configuration SocketIO basique
-socketio = SocketIO(app, cors_allowed_origins="*")
+# NOTE: en production WSGI (ex: PythonAnywhere), préférez async_mode='threading' pour le polling
+SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode=SOCKETIO_ASYNC_MODE)
 
 # Dossier du build React (Option B)
 BUILD_DIR = os.path.join(os.path.dirname(__file__), 'frontend', 'build')
