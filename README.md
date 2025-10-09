@@ -113,3 +113,35 @@ Variables supportées:
 Notes:
 - `.env` est ignoré par Git; ne le commitez pas. Conservez `.env.example` versionné.
 - Les variables de votre shell (ex: `HOST=127.0.0.1 PORT=5050`) priment sur celles de `.env` lors du démarrage via `start_server.py`.
+
+---
+
+## Déploiement WSGI sans WebSocket (ex: PythonAnywhere)
+
+Ce projet est configuré pour fonctionner en mode Socket.IO “polling only” (WebSocket désactivé), adapté aux hébergements WSGI qui ne supportent pas l’upgrade. Pour stabiliser les sessions:
+
+Côté serveur (Flask‑SocketIO):
+- Garder le mode async `threading` (défaut): `SOCKETIO_ASYNC_MODE=threading`.
+- WebSocket désactivé dans le code (paramètres `websocket=False`, `allow_upgrades=False`).
+- Ajuster les timeouts Engine.IO via `.env` (réduit les « Invalid session » en cas de latence):
+  - `PING_INTERVAL=25` (intervalle ping en secondes)
+  - `PING_TIMEOUT=60` (délai d’expiration)
+- Multi‑processus: utilisez soit un seul worker, soit une file de messages partagée (Redis) pour éviter des pertes de session entre workers:
+  - Single worker (recommandé si vous n’avez pas Redis)
+  - OU configurez `REDIS_URL=redis://:password@hostname:6379/0` et activez plusieurs workers
+
+Côté client (React / socket.io-client):
+- Le client force automatiquement le transport `polling` et désactive l’upgrade quand l’hôte se termine par `pythonanywhere.com`.
+- Reconnexion robuste activée (delais progressifs) pour absorber des ré-ouvertures de requêtes long‑polling.
+
+Remarques sur les logs:
+- `KeyError: 'Session is disconnected'` (Engine.IO): requête avec SID périmée ou onglet rechargé; surtout en long‑polling. Mitigé par les timeouts ci‑dessus.
+- `OSError: write error`: le client a fermé la connexion pendant l’écriture de la réponse; bénin en pratique.
+- Évitez d’accéder à `flask.session` hors des handlers (p. ex. dans des tâches de fond).
+
+Variables `.env` pertinentes:
+- `SOCKETIO_ASYNC_MODE=threading`
+- `PING_INTERVAL=25`
+- `PING_TIMEOUT=60`
+- `REDIS_URL=` (laisser vide si single worker)
+

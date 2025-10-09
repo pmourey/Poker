@@ -18,6 +18,11 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
 # Configuration SocketIO basique
 # NOTE: en production WSGI (ex: PythonAnywhere), préférez async_mode='threading' pour le polling
 SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
+# Timeouts Engine.IO pour le polling (réduisent les "Invalid session" en cas de latence)
+PING_INTERVAL = int(os.environ.get('PING_INTERVAL', '25'))
+PING_TIMEOUT = int(os.environ.get('PING_TIMEOUT', '60'))
+# Message queue optionnelle (Redis) pour partager l’état entre plusieurs workers/processus
+MESSAGE_QUEUE = os.environ.get('REDIS_URL') or None
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
@@ -25,6 +30,14 @@ socketio = SocketIO(
     # Désactiver complètement les websockets et l'upgrade pour WSGI
     websocket=False,
     allow_upgrades=False,
+    # Réglages polling
+    ping_interval=PING_INTERVAL,
+    ping_timeout=PING_TIMEOUT,
+    # Logger verbeux désactivé par défaut
+    logger=False,
+    engineio_logger=False,
+    # MQ pour multi-processus si fourni
+    message_queue=MESSAGE_QUEUE,
 )
 
 # Dossier du build React (Option B)

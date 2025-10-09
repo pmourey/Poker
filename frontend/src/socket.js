@@ -13,11 +13,13 @@ const endpoint = envUrl || (isFlaskOrigin ? undefined : defaultDevUrl);
 
 // Détecter PythonAnywhere pour forcer le transport "polling" (les WebSockets ne sont pas toujours supportés)
 let transports = ['polling', 'websocket'];
+let disableUpgrade = false;
 try {
   const target = endpoint || (typeof window !== 'undefined' ? window.location.origin : '');
   const url = new URL(target);
   if (url.hostname.endsWith('pythonanywhere.com')) {
     transports = ['polling'];
+    disableUpgrade = true; // éviter toute tentative d'upgrade côté client
   }
 } catch (e) {
   // Fallback silencieux: garder l'ordre polling → websocket
@@ -27,7 +29,13 @@ const socket = io(endpoint, {
   // Ne pas envoyer de credentials pour éviter CORS entre 3000 et 5000
   withCredentials: false,
   transports,
-  autoConnect: true,
+  upgrade: disableUpgrade || false, // explicite: pas d'upgrade en environnement contraint
+  // Reconnexion résiliente en mode polling
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 5000,
+  timeout: 25000,
 });
 
 export default socket;

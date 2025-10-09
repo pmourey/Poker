@@ -5,7 +5,45 @@ SECRET_KEY ?= change-me-in-prod
 HOST ?= 0.0.0.0
 PORT ?= 5000
 
+# Interpréteur Python (surchargable):
+PY ?= python3
+# Délai d'attente après démarrage serveur avant test (secondes):
+WAIT ?= 3
+
 .PHONY: option-b
 option-b:
 	@echo "[make] Lancement Option B (build React + start Flask)"
 	@SECRET_KEY=$(SECRET_KEY) HOST=$(HOST) PORT=$(PORT) bash scripts/option_b.sh
+
+.PHONY: smoke
+smoke:
+	@set -euo pipefail; \
+	echo "[smoke] Installation des dépendances Python..."; \
+	$(PY) -m pip install -r requirements.txt >/dev/null; \
+	echo "[smoke] Vérification de la connectivité Redis..."; \
+	$(PY) scripts/check_redis.py; \
+	echo "[smoke] Démarrage du serveur Flask-SocketIO (polling-only)..."; \
+	SMOKE_HOST=$${HOST:-127.0.0.1}; \
+	SMOKE_PORT=$${PORT:-5000}; \
+	$(PY) start_server.py >/tmp/poker_smoke_server.log 2>&1 & \
+	SERVER_PID=$$!; \
+	echo $$SERVER_PID > .smoke_server.pid; \
+	sleep $(WAIT); \
+	echo "[smoke] Exécution du smoke test contre http://$$SMOKE_HOST:$$SMOKE_PORT ..."; \
+	SMOKE_SERVER_URL="http://$$SMOKE_HOST:$$SMOKE_PORT" $(PY) scripts/smoke_socketio.py; \
+	STATUS=$$?; \
+	echo "[smoke] Arrêt du serveur (PID=$$SERVER_PID)"; \
+	kill $$SERVER_PID >/dev/null 2>&1 || true; \
+	rm -f .smoke_server.pid; \
+	exit $$STATUS
+
+.PHONY: smoke-verbose
+smoke-verbose:
+	@set -euo pipefail; \
+	if $(MAKE) -s smoke; then \
+	  exit 0; \
+	else \
+	  echo "[smoke-verbose] Échec du smoke test — extrait du journal serveur:"; \
+	  tail -n 200 /tmp/poker_smoke_server.log || true; \
+	  exit 1; \
+	fi

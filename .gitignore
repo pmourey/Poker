@@ -24,7 +24,7 @@ session*
 # Environnement virtuel
 .venv/
 venv/
-env/
+.env/
 
 # --- Ajouts pour le frontend React / GitHub Pages ---
 # Node modules et build CRA
