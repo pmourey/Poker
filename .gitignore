@@ -38,3 +38,9 @@ frontend/**/*.map
 # IDE / outils
 .idea/
 .vscode/
+
+# --- Environnements backend ---
+# Ignorer les variables d'environnement à la racine du projet
+.env
+.env.*
+!.env.example

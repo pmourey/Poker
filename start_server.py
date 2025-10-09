@@ -7,6 +7,7 @@ import subprocess
 import sys
 import os
 
+
 def install_requirements():
     """Installer les dépendances nécessaires"""
     try:
@@ -16,6 +17,7 @@ def install_requirements():
         print("❌ Erreur lors de l'installation des dépendances")
         return False
     return True
+
 
 def main():
     print("🃏 Démarrage de l'application de Poker Multi-joueur 🃏")
@@ -29,6 +31,15 @@ def main():
     # Installer les dépendances
     if not install_requirements():
         return
+
+    # Charger les variables d'environnement depuis un fichier .env s'il est présent
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # charge .env à la racine du projet
+        print("📦 Variables d'environnement chargées depuis .env (si présent)")
+    except Exception as e:
+        # Ne pas bloquer si python-dotenv n'est pas dispo, mais l'installation ci-dessus devrait l'ajouter
+        print(f"ℹ️ Impossible de charger .env automatiquement: {e}")
 
     # Paramètres d'écoute
     host = os.environ.get('HOST', '0.0.0.0')
@@ -45,6 +56,7 @@ def main():
         print("\n👋 Serveur arrêté par l'utilisateur")
     except Exception as e:
         print(f"❌ Erreur lors du démarrage: {e}")
+
 
 if __name__ == '__main__':
     main()

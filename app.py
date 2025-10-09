@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from typing import List, Dict
 from enum import Enum
 import os
+from dotenv import load_dotenv
+
+# Charger les variables depuis .env (si présent)
+load_dotenv()
 
 app = Flask(__name__)
 # Lire le secret depuis l’env, avec fallback pour dev
@@ -14,7 +18,14 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
 # Configuration SocketIO basique
 # NOTE: en production WSGI (ex: PythonAnywhere), préférez async_mode='threading' pour le polling
 SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode=SOCKETIO_ASYNC_MODE)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode=SOCKETIO_ASYNC_MODE,
+    # Désactiver complètement les websockets et l'upgrade pour WSGI
+    websocket=False,
+    allow_upgrades=False,
+)
 
 # Dossier du build React (Option B)
 BUILD_DIR = os.path.join(os.path.dirname(__file__), 'frontend', 'build')

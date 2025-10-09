@@ -88,3 +88,28 @@ SECRET_KEY="ma-cle" HOST=127.0.0.1 PORT=5050 bash scripts/option_b.sh
 ```
 
 Note: si vous utilisez gunicorn en production, suivez `Deployment_details.md` (worker eventlet requis) et configurez un reverse proxy (Nginx) pour les WebSockets.
+
+---
+
+## Configuration via .env (python-dotenv)
+
+Ce projet charge automatiquement les variables d’environnement depuis un fichier `.env` à la racine (si présent) grâce à [python-dotenv]. Cela permet de configurer le backend sans exporter de variables dans votre shell.
+
+Étapes:
+- Copiez le modèle et adaptez les valeurs:
+```bash
+cp .env.example .env
+# éditez .env pour définir vos valeurs locales
+```
+- Lancez ensuite le serveur normalement (le chargement `.env` est automatique via `app.py` et `start_server.py`).
+
+Variables supportées:
+- SECRET_KEY: clé secrète Flask (défaut: poker-secret-key-2023 côté app si non fournie)
+- HOST: hôte d’écoute (défaut: 0.0.0.0)
+- PORT: port d’écoute (défaut: 5000)
+- SOCKETIO_ASYNC_MODE: mode async de Socket.IO, ex. threading | eventlet | gevent (défaut: threading)
+- NEXT_HAND_DELAY_SECONDS: délai avant d’enchaîner automatiquement une nouvelle main (défaut: 4)
+
+Notes:
+- `.env` est ignoré par Git; ne le commitez pas. Conservez `.env.example` versionné.
+- Les variables de votre shell (ex: `HOST=127.0.0.1 PORT=5050`) priment sur celles de `.env` lors du démarrage via `start_server.py`.
