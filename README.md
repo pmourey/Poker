@@ -1,193 +1,53 @@
-# Poker
+# Poker — Multi‑joueur (depuis le multi puzzle CodinGame de « wala »)
 
-Multi-player puzzle in WIP provided by wala
+Projet WIP qui transforme une base CodinGame « multi puzzle » (auteur: wala) en un petit jeu de Texas Hold’em jouable en temps réel depuis un navigateur.
 
-https://www.codingame.com/ide/demo/10121965805634331ad7899c59adcb65091817e
+Lien d’origine: https://www.codingame.com/ide/demo/10121965805634331ad7899c59adcb65091817e
 
-#### Classement des mains:
-    https://en.wikipedia.org/wiki/Texas_hold_'em#Hand_values
 
-#### Combinaisons au poker:
-    http://combinaison-poker.com/probabilite-poker?ssp=1&darkschemeovr=1&setlang=fr-FR&safesearch=moderate
+## Objectif du projet
+- Offrir un bac à sable pédagogique pour un poker multi‑joueur temps réel (sockets, rooms, états de table, etc.).
+- Démarrer vite en local (Python/Flask côté serveur, React côté client) puis itérer.
+- Rester volontairement simple: certaines règles sont simplifiées et l’évaluation des mains est encore minimaliste (WIP).
 
----
 
-## Frontend React (intégration avec Flask)
+## Architecture (vue d’ensemble)
+- Backend: Flask + Flask‑SocketIO
+  - Python 3.11+
+  - Événements Socket.IO: `create_game`, `join_game`, `start_game`, `player_action`, `leave_game`
+  - Diffusions côté serveur: `game_update`, `game_started`, `hand_dealt`, `hand_result`, `error`, `table_message`
+  - Fichiers clés: `app.py` (mécanique de table, événements), `start_server.py` (lancement)
+- Frontend: React (Create React App) + `socket.io-client`
+  - Dossier: `frontend/`
+  - Composant principal: `src/App.js`, client Socket: `src/socket.js`
+  - En dev: serveur React (3000) avec proxy vers Flask (5000)
+- Déploiement simple: build React servi statiquement par Flask (Option B)
 
-Une application React a été ajoutée dans `frontend/` et communique avec le serveur Flask via Socket.IO. Le proxy de développement est configuré pour rediriger les WebSockets et éviter les problèmes de CORS.
+Schéma simplifié:
+Client (React) ⇄ Socket.IO ⇄ Flask (moteur de jeu)
 
-> Nouveau: pour publier le frontend sur GitHub Pages (hébergement statique), voir `Deployment_Github_Pages.md`.
 
-### Prérequis
-- Node.js LTS (>= 18) et npm
-- Python 3.11+ (pour le backend Flask)
+## Gameplay (Texas Hold’em simplifié)
+- Jusqu’à 6 joueurs; tapis initial: 1000; blinds: 10/20
+- Phases: Préflop → Flop (3) → Turn (1) → River (1) → Showdown
+- Actions quand c’est votre tour: check, call, raise, fold
+- Si tous les joueurs restants sont all‑in, la révélation est automatique
+- Les joueurs rejoignant une table en cours ne deviennent actifs qu’à la main suivante
+- Note WIP: l’évaluation des mains est simplifiée/placeholder; le but est la démonstration temps réel
 
-### Installation et démarrage
+Références utiles:
+- Classement des mains: https://en.wikipedia.org/wiki/Texas_hold_'em#Hand_values
+- Probabilités/combinaisons: http://combinaison-poker.com/probabilite-poker?ssp=1&darkschemeovr=1&setlang=fr-FR&safesearch=moderate
 
-Backend Flask (port 5000):
 
-```bash
-# Depuis la racine du projet
-python3 start_server.py
-```
+## Démarrage rapide (local)
+- Serveur (port 5000): exécuter `python3 start_server.py` à la racine
+- Client (port 3000): dans `frontend/`, `npm install` puis `npm start`
+- Option B: `npm run build` dans `frontend/` puis servir le build via Flask en relançant `start_server.py`
 
-Frontend React (port 3000):
+Astuce: en dev, accédez à l’UI sur http://localhost:3000 (le proxy redirige vers Flask). Le build statique est servi sur http://localhost:5000 quand présent.
 
-```bash
-cd frontend
-npm install
-npm start
-```
 
-Le frontend est servi sur http://localhost:3000 et utilise un proxy vers http://localhost:5000 pour l’API Socket.IO.
-
-### Utilisation rapide
-1. Ouvrez http://localhost:3000
-2. Entrez un nom de joueur et cliquez sur "Créer" pour créer une partie (un ID sera généré), ou entrez un ID de partie existant pour "Rejoindre".
-3. Une fois au moins 2 joueurs dans la partie, cliquez sur "Démarrer une main".
-4. Les actions disponibles (check/call/raise/fold) s’activent lorsque c’est votre tour.
-
-### Détails techniques
-- Client Socket.IO: `frontend/src/socket.js`
-- UI principale: `frontend/src/App.js`
-- Proxy CRA -> Flask: `frontend/package.json` (champ `proxy`)
-- Côté Flask, chaque client rejoint une room personnelle basée sur son `player_id` pour recevoir des événements privés comme `hand_dealt`.
-
-### Dépannage
-- Assurez-vous que le backend écoute sur le port 5000 avant de lancer le frontend.
-- Si le frontend ne se connecte pas au socket, vérifiez que `socket.io-client` est bien installé (`npm install` dans `frontend/`).
-- Si vous avez modifié les ports, mettez à jour la valeur du `proxy` dans `frontend/package.json` et le point de connexion dans `frontend/src/socket.js`.
-
-### Option B: Servir le build React via Flask
-1. Construire le frontend:
-```bash
-cd frontend
-npm install
-npm run build
-```
-2. Lancer Flask (utilise le build si présent):
-```bash
-# À la racine du projet
-export SECRET_KEY="change-me-in-prod"  # macOS/Linux
-python3 start_server.py
-```
-3. Ouvrez http://localhost:5000 (le serveur Flask servira `frontend/build/index.html`).
-
-#### Lancer en une commande
-Avec Make (recommandé):
-```bash
-make option-b                        # utilise SECRET_KEY=change-me-in-prod, HOST=0.0.0.0, PORT=5000
-make option-b SECRET_KEY="ma-cle"   # surcharger la clé secrète
-make option-b HOST=127.0.0.1 PORT=5050  # surcharger hôte et port
-```
-
-Sans Make (script bash):
-```bash
-bash scripts/option_b.sh                              # utilise $SECRET_KEY/$HOST/$PORT si définis, sinon défauts
-SECRET_KEY="ma-cle" HOST=127.0.0.1 PORT=5050 bash scripts/option_b.sh
-```
-
-Note: si vous utilisez gunicorn en production, suivez `Deployment_details.md` (worker eventlet requis) et configurez un reverse proxy (Nginx) pour les WebSockets.
-
----
-
-## Configuration via .env (python-dotenv)
-
-Ce projet charge automatiquement les variables d’environnement depuis un fichier `.env` à la racine (si présent) grâce à [python-dotenv]. Cela permet de configurer le backend sans exporter de variables dans votre shell.
-
-Étapes:
-- Copiez le modèle et adaptez les valeurs:
-```bash
-cp .env.example .env
-# éditez .env pour définir vos valeurs locales
-```
-- Lancez ensuite le serveur normalement (le chargement `.env` est automatique via `app.py` et `start_server.py`).
-
-Variables supportées:
-- SECRET_KEY: clé secrète Flask (défaut: poker-secret-key-2023 côté app si non fournie)
-- HOST: hôte d’écoute (défaut: 0.0.0.0)
-- PORT: port d’écoute (défaut: 5000)
-- SOCKETIO_ASYNC_MODE: mode async de Socket.IO, ex. threading | eventlet | gevent (défaut: threading)
-- NEXT_HAND_DELAY_SECONDS: délai avant d’enchaîner automatiquement une nouvelle main (défaut: 4)
-
-Notes:
-- `.env` est ignoré par Git; ne le commitez pas. Conservez `.env.example` versionné.
-- Les variables de votre shell (ex: `HOST=127.0.0.1 PORT=5050`) priment sur celles de `.env` lors du démarrage via `start_server.py`.
-
----
-
-## Déploiement WSGI sans WebSocket (ex: PythonAnywhere)
-
-Ce projet est configuré pour fonctionner en mode Socket.IO “polling only” (WebSocket désactivé), adapté aux hébergements WSGI qui ne supportent pas l’upgrade. Pour stabiliser les sessions:
-
-Côté serveur (Flask‑SocketIO):
-- Garder le mode async `threading` (défaut): `SOCKETIO_ASYNC_MODE=threading`.
-- WebSocket désactivé dans le code (paramètres `websocket=False`, `allow_upgrades=False`).
-- Ajuster les timeouts Engine.IO via `.env` (réduit les « Invalid session » en cas de latence):
-  - `PING_INTERVAL=25` (intervalle ping en secondes)
-  - `PING_TIMEOUT=60` (délai d’expiration)
-- Multi‑processus: utilisez soit un seul worker, soit une file de messages partagée (Redis) pour éviter des pertes de session entre workers:
-  - Single worker (recommandé si vous n’avez pas Redis)
-  - OU configurez `REDIS_URL=redis://:password@hostname:6379/0` et activez plusieurs workers
-
-Côté client (React / socket.io-client):
-- Le client force automatiquement le transport `polling` et désactive l’upgrade quand l’hôte se termine par `pythonanywhere.com`.
-- Reconnexion robuste activée (delais progressifs) pour absorber des ré-ouvertures de requêtes long‑polling.
-
-Remarques sur les logs:
-- `KeyError: 'Session is disconnected'` (Engine.IO): requête avec SID périmée ou onglet rechargé; surtout en long‑polling. Mitigé par les timeouts ci‑dessus.
-- `OSError: write error`: le client a fermé la connexion pendant l’écriture de la réponse; bénin en pratique.
-- Évitez d’accéder à `flask.session` hors des handlers (p. ex. dans des tâches de fond).
-
-Variables `.env` pertinentes:
-- `SOCKETIO_ASYNC_MODE=threading`
-- `PING_INTERVAL=25`
-- `PING_TIMEOUT=60`
-- `REDIS_URL=` (laisser vide si single worker)
-
----
-
-## Accéder au serveur React (CRA) via un domaine externe (corriger "Invalid Host header")
-
-Si vous exposez le serveur de développement React (npm start) derrière un domaine ou un port externe (par ex. philippe.mourey.com:50000), Webpack Dev Server peut refuser la requête avec "Invalid Host header".
-
-Solution (développement uniquement): créez `frontend/.env.development.local` et redémarrez `npm start` depuis `frontend/`.
-
-Contenu recommandé:
-
-- DANGEROUSLY_DISABLE_HOST_CHECK=true — désactive la vérification d’hôte côté Webpack Dev Server
-- HOST=0.0.0.0 — écoute sur toutes les interfaces
-- PORT=50000 — alignez le port avec votre redirection/NAT (ou laissez 3000 et mappez 50000→3000 sur votre routeur)
-
-Précautions:
-- N’utilisez ces réglages qu’en DEV sur un réseau de confiance. Ne les commitez pas; `.env.development.local` est ignoré par Git.
-- En cas de proxy/TLS ou port public ≠ port local, vous pouvez aussi régler le Hot Reload (HMR) avec:
-  - `WDS_SOCKET_HOST=<votre-domaine>`
-  - `WDS_SOCKET_PORT=<votre-port-public>`
-  - `WDS_SOCKET_PATH=/ws` (si vous avez modifié le chemin)
-
-Étapes types:
-1) Créez/éditez `frontend/.env.development.local` avec:
-```
-DANGEROUSLY_DISABLE_HOST_CHECK=true
-HOST=0.0.0.0
-PORT=50000
-```
-2) Redémarrez le serveur:
-```
-cd frontend
-npm start
-```
-3) Testez depuis l’extérieur:
-```
-curl -i 'http://<votre-domaine>:50000/'
-```
-Vous ne devez plus voir "Invalid Host header".
-
----
-
-## Sécurité
-
-- Ne pas exposer le serveur de développement (npm start) en production. Utiliser plutôt le build React servi par Flask (Option B).
-- Vérifiez les règles de pare-feu et de sécurité réseau si vous ne parvenez pas à accéder au serveur depuis l’extérieur.
-- Surveillez les logs pour toute activité suspecte, surtout si vous désactivez des vérifications de sécurité comme `DANGEROUSLY_DISABLE_HOST_CHECK`.
+## Statut
+- Prototype actif pour parties locales et démonstrations.
+- Contributions bienvenues pour: évaluation réelle des mains, side‑pots, spectateurs, persistance, UI/UX, tests.
