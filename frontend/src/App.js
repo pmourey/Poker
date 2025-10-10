@@ -82,13 +82,13 @@ function App() {
       return 'http://localhost:5000';
     };
 
-    const onConnect = () => { setConnected(true); setError(''); };
+    const onConnect = () => { setConnected(true); setError(''); socket.emit('request_open_games'); };
     const onDisconnect = () => setConnected(false);
     const onConnectError = (err) => {
       const endpoint = resolveEndpoint();
       setError(`Connexion socket échouée: ${err?.message || err || 'inconnue'}. Backend attendu: ${endpoint}`);
     };
-    const onReconnect = () => setError('');
+    const onReconnect = () => { setError(''); socket.emit('request_open_games'); };
     const onReconnectAttempt = (n) => setError(`Tentative de reconnexion (#${n})...`);
     const onReconnectError = (err) => setError(`Reconnexion échouée: ${err?.message || err || 'inconnue'}`);
 
@@ -106,6 +106,11 @@ function App() {
       socket.on('error', (payload) => {
         // Flask emits {'message': '...'}
         setError(payload?.message || 'Erreur inconnue');
+      });
+
+      socket.on('open_games', (payload) => {
+        const games = Array.isArray(payload?.games) ? payload.games : [];
+        setOpenGames(games);
       });
 
       socket.on('game_created', ({ game_id, player_id }) => {
@@ -135,6 +140,8 @@ function App() {
         setGame(null);
         setMyHand([]);
         setHandResult(null);
+        // Demander la liste mise à jour du lobby
+        socket.emit('request_open_games');
       });
 
       socket.on('game_update', (gameState) => {
@@ -186,31 +193,9 @@ function App() {
     return () => clearTimeout(t);
   }, [tableMessage]);
 
-  // Charger périodiquement la liste des parties ouvertes
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch('/api/games', { headers: { 'Accept': 'application/json' } });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) setOpenGames(Array.isArray(data?.games) ? data.games : []);
-      } catch (_) {
-        // ignorer en dev
-      }
-    };
-    load();
-    const id = setInterval(load, 7000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
-
-  const refreshOpenGames = async () => {
-    try {
-      const res = await fetch('/api/games', { headers: { 'Accept': 'application/json' } });
-      if (!res.ok) return;
-      const data = await res.json();
-      setOpenGames(Array.isArray(data?.games) ? data.games : []);
-    } catch (_) {}
+  // Remplacer le polling HTTP par un refresh via socket
+  const refreshOpenGames = () => {
+    try { socket.emit('request_open_games'); } catch (_) {}
   };
 
   const createGame = (e) => {
@@ -271,6 +256,42 @@ function App() {
     const me = game.players[myIndex];
     return (game.current_bet || 0) > (me.current_bet || 0);
   };
+
+  // Calcul des marqueurs D / SB / BB pour l'affichage
+  const blindMarkers = useMemo(() => {
+    const res = { dealerIndex: -1, sbIndex: -1, bbIndex: -1 };
+    const n = game?.players?.length || 0;
+    if (!n) return res;
+    const dealerIndex = Number.isInteger(game?.dealer_pos) ? Number(game.dealer_pos) : -1;
+    res.dealerIndex = dealerIndex;
+    if (n >= 2 && (game?.hand_number || 0) > 0 && dealerIndex >= 0) {
+      const hn = Number(game.hand_number || 0);
+      const eligible = [];
+      for (let i = 0; i < n; i++) {
+        const p = game.players[i];
+        const efh = Number(p?.eligible_from_hand || 1);
+        const connected = !!p?.connected;
+        const stack = Number(p?.stack || 0);
+        if (efh <= hn && connected && stack > 0) eligible.push(i);
+      }
+      if (eligible.length >= 2) {
+        const includes = (idx) => eligible.indexOf(idx) !== -1;
+        const nextEligible = (start) => {
+          let idx = (start + 1) % n;
+          for (let c = 0; c < n; c++) {
+            if (includes(idx)) return idx;
+            idx = (idx + 1) % n;
+          }
+          return -1;
+        };
+        const sb = nextEligible(dealerIndex);
+        const bb = sb >= 0 ? nextEligible(sb) : -1;
+        res.sbIndex = sb;
+        res.bbIndex = bb;
+      }
+    }
+    return res;
+  }, [game]);
 
   return (
     <div className="App" style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>
@@ -444,6 +465,9 @@ function App() {
                 const hn = Number(game?.hand_number || 0);
                 const efh = Number(p?.eligible_from_hand || 1);
                 const nextHandFlag = hn > 0 && efh > hn;
+                const isDealer = blindMarkers.dealerIndex === idx;
+                const isSB = blindMarkers.sbIndex === idx;
+                const isBB = blindMarkers.bbIndex === idx;
                 return (
                   <div key={p.id} style={{
                     border: '1px solid #eee', padding: 8,
@@ -451,6 +475,12 @@ function App() {
                   }}>
                     <div>
                       <strong>{p.name}</strong> {p.id === playerId ? '(moi)' : ''}
+                      {/* Tags positionnels */}
+                      <span style={{ marginLeft: 8, fontSize: 12, color: '#333' }}>
+                        {isDealer && <span style={{ border: '1px solid #ccc', padding: '1px 4px', marginRight: 4 }}>D</span>}
+                        {isSB && <span style={{ border: '1px solid #ccc', padding: '1px 4px', marginRight: 4 }}>SB</span>}
+                        {isBB && <span style={{ border: '1px solid #ccc', padding: '1px 4px', marginRight: 4 }}>BB</span>}
+                      </span>
                       {p.folded ? ' - [FOLD]' : ''}
                       {!p.connected ? ' - [déconnecté]' : ''}
                       {nextHandFlag ? ' - [prochaine main]' : (!p.can_bet ? ' - [hors mise]' : '')}

@@ -248,6 +248,11 @@ class PokerGame:
         if len(eligible) < 2:
             return False
 
+        # Tourner le bouton du donneur pour les mains après la première
+        if self.players:
+            if self.hand_number >= 1:
+                self.dealer_pos = (self.dealer_pos + 1) % len(self.players)
+
         # Incrémenter le numéro de main
         self.hand_number += 1
 
@@ -655,6 +660,40 @@ def list_games():
     result.sort(key=lambda g: (-g['connected'], -g['players'], g['id']))
     return jsonify({'games': result})
 
+# --- NEW: helpers & sockets pour push open games ---
+
+def _compute_open_games():
+    result = []
+    for gid, game in games.items():
+        if not game.players:
+            continue
+        result.append({
+            'id': gid,
+            'players': len(game.players),
+            'connected': sum(1 for p in game.players if p.connected),
+            'phase': game.phase.value,
+            'host': (game.players[0].name if game.players else ''),
+            'can_join': len(game.players) < game.max_players,
+        })
+    result.sort(key=lambda g: (-g['connected'], -g['players'], g['id']))
+    return result
+
+
+def _broadcast_open_games():
+    try:
+        payload = {'games': _compute_open_games()}
+        socketio.emit('open_games', payload)
+    except Exception as e:
+        print(f"[EMIT] open_games broadcast error: {e}")
+
+
+@socketio.on('request_open_games')
+def handle_request_open_games():
+    try:
+        emit('open_games', {'games': _compute_open_games()})
+    except Exception as e:
+        emit('error', {'message': f'Impossible de lister les parties: {e}'})
+
 @socketio.on('connect')
 def handle_connect():
     """Gérer la connexion d'un client"""
@@ -668,6 +707,7 @@ def handle_connect():
     except Exception as e:
         print(f"[JOIN_ROOM] Erreur lors de la jonction de la room {player_id}: {e}")
     print(f"✅ Session connectée: {player_id}")
+    # Optionnel: on pourrait émettre la liste au nouveau client si besoin côté lobby
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -679,6 +719,8 @@ def handle_disconnect():
                 if player.id == player_id:
                     player.connected = False
         print(f"Session déconnectée: {player_id}")
+        # NEW: mettre à jour le lobby par push
+        _broadcast_open_games()
 
 @socketio.on('create_game')
 def handle_create_game(data):
@@ -719,6 +761,8 @@ def handle_create_game(data):
         # Aussi envoyer à toute la room
         socketio.emit('game_update', game.to_dict(), room=game_id)
         print(f"PARTIE CRÉÉE: {player_name} ({player_id}) a créé la partie {game_id}")
+        # NEW: pousser la liste des parties
+        _broadcast_open_games()
     else:
         del games[game_id]
         emit('error', {'message': f'Erreur lors de la création: {result}'})
@@ -759,6 +803,8 @@ def handle_join_game(data):
         emit('game_joined', {'game_id': game_id, 'player_id': player_id})
         socketio.emit('game_update', game.to_dict(), room=game_id)
         print(f"RECONNEXION: {player_name} ({player_id}) s'est reconnecté à la partie {game_id}")
+        # NEW: mettre à jour le lobby (compte des connectés)
+        _broadcast_open_games()
         return
 
     result = game.add_player(player_id, player_name.strip())
@@ -782,6 +828,8 @@ def handle_join_game(data):
         emit('game_joined', {'game_id': game_id, 'player_id': player_id})
         socketio.emit('game_update', game.to_dict(), room=game_id)
         print(f"NOUVEAU JOUEUR: {player_name} ({player_id}) a rejoint la partie {game_id}")
+        # NEW: pousser la liste des parties
+        _broadcast_open_games()
     elif result == "invalid_name":
         emit('error', {'message': 'Nom automatique détecté. Veuillez choisir un nom personnalisé.'})
         print(f"NOM REJETÉ: {player_name} ({player_id}) - nom automatique")
@@ -1008,6 +1056,8 @@ def handle_leave_game(data):
     emit('left_game', {'message': 'Vous avez quitté la partie'})
     socketio.emit('game_update', game.to_dict(), room=game_id)
     print(f"Joueur {player_id} a quitté la partie {game_id}")
+    # NEW: pousser la liste des parties
+    _broadcast_open_games()
 
 # Supprimer les auto‑enchaînements dans schedule_next_hand et ne plus l'appeler automatiquement
 # (Conservé pour référence, mais non utilisé)
