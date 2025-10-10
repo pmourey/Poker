@@ -1,4 +1,4 @@
-from flask import Flask, render_template, session, redirect, url_for, send_from_directory, request
+from flask import Flask, render_template, session, redirect, url_for, send_from_directory, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import random
 import uuid
@@ -151,6 +151,8 @@ class PokerPlayer:
     all_in: bool = False
     connected: bool = True
     has_acted: bool = False
+    # Nouveau: le joueur ne devient éligible qu'à partir de cette main (1-indexé)
+    eligible_from_hand: int = 1
 
     def to_dict(self, hide_hand=True):
         return {
@@ -163,8 +165,8 @@ class PokerPlayer:
             'all_in': self.all_in,
             'connected': self.connected,
             'hand': [str(card) for card in self.hand] if not hide_hand else [],
-            # Nouveau: indique si le joueur peut miser dans l'état courant
-            'can_bet': (self.stack > 0 and not self.folded and not self.all_in)
+            'can_bet': (self.stack > 0 and not self.folded and not self.all_in),
+            'eligible_from_hand': self.eligible_from_hand,
         }
 
 @dataclass
@@ -182,6 +184,8 @@ class PokerGame:
     big_blind: int = 20
     max_players: int = 6
     last_winner: Dict[str, str] = field(default_factory=dict)
+    # Nouveau: numéro de main en cours (1-indexé). 0 = pas encore démarré
+    hand_number: int = 0
 
     def __post_init__(self):
         self.create_deck()
@@ -220,7 +224,9 @@ class PokerGame:
         player = PokerPlayer(
             id=player_id,
             name=name,
-            stack=buy_in
+            stack=buy_in,
+            # Par défaut, éligible à partir de la prochaine main qui démarre
+            eligible_from_hand=self.hand_number + 1
         )
         self.players.append(player)
         print(f"[ADD_PLAYER] SUCCESS: {name} ({player_id}) ajouté. Total: {len(self.players)} joueurs")
@@ -236,6 +242,9 @@ class PokerGame:
         if len(eligible) < 2:
             return False
 
+        # Incrémenter le numéro de main
+        self.hand_number += 1
+
         self.create_deck()
         self.community_cards = []
         self.pot = 0
@@ -247,6 +256,12 @@ class PokerGame:
             player.hand = []
             player.current_bet = 0
             player.total_bet = 0
+            # Inéligible pour cette main (rejoint après le démarrage précédent)
+            if player.eligible_from_hand > self.hand_number:
+                player.folded = True
+                player.all_in = False
+                player.has_acted = True  # considéré comme hors tour
+                continue
             # Marquer comme inactif ceux qui ne peuvent pas miser pour cette main
             if player.stack <= 0 or not player.connected:
                 player.folded = True
@@ -256,10 +271,10 @@ class PokerGame:
                 player.all_in = False
             player.has_acted = False
 
-        # Deal cards uniquement aux joueurs actifs
+        # Deal cards uniquement aux joueurs actifs et éligibles
         for _ in range(2):
             for player in self.players:
-                if not player.folded and not player.all_in:
+                if not player.folded and not player.all_in and player.eligible_from_hand <= self.hand_number:
                     player.hand.append(self.deck.pop())
 
         # Post blinds
@@ -283,7 +298,8 @@ class PokerGame:
 
     def post_blinds(self):
         # Calculer les positions de blinds parmi les joueurs éligibles
-        eligible_indices = [i for i, p in enumerate(self.players) if not p.folded and not p.all_in and p.stack > 0 and p.connected]
+        eligible_indices = [i for i, p in enumerate(self.players)
+                            if p.eligible_from_hand <= self.hand_number and not p.folded and not p.all_in and p.stack > 0 and p.connected]
         if len(eligible_indices) < 2:
             return
 
@@ -325,10 +341,26 @@ class PokerGame:
         # Le joueur suivant au BB
         self.current_player = next_eligible(big_blind_pos)
 
+    def reset_betting_round(self):
+        self.current_bet = 0
+        for player in self.players:
+            player.current_bet = 0
+            # Ne réinitialiser has_acted que pour les joueurs éligibles et actifs
+            if player.eligible_from_hand <= self.hand_number and not player.folded and not player.all_in:
+                player.has_acted = False
+        # Trouver le premier joueur éligible (à partir du small blind)
+        start = (self.dealer_pos + 1) % len(self.players) if self.players else 0
+        idx = start
+        for _ in range(len(self.players)):
+            if (player := self.players[idx]) and player.eligible_from_hand <= self.hand_number and not player.folded and not player.all_in:
+                self.current_player = idx
+                break
+            idx = (idx + 1) % len(self.players)
+        else:
+            self.current_player = start
+
     def is_betting_round_complete(self) -> bool:
-        """Le tour est complet si tous les joueurs actifs (non fold) ont AGI dans ce tour
-        et soit ont égalisé la mise courante (current_bet), soit sont all-in."""
-        active = [p for p in self.players if not p.folded]
+        active = [p for p in self.players if p.eligible_from_hand <= self.hand_number and not p.folded]
         if len(active) <= 1:
             return True
         for p in active:
@@ -340,7 +372,7 @@ class PokerGame:
         return True
 
     def all_active_all_in(self) -> bool:
-        active = [p for p in self.players if not p.folded]
+        active = [p for p in self.players if p.eligible_from_hand <= self.hand_number and not p.folded]
         return len(active) > 0 and all(p.all_in for p in active)
 
     def advance_phase_after_betting_if_needed(self):
@@ -396,22 +428,6 @@ class PokerGame:
         self.deck.pop()  # Burn card
         self.community_cards.append(self.deck.pop())
         self.reset_betting_round()
-
-    def reset_betting_round(self):
-        self.current_bet = 0
-        for player in self.players:
-            player.current_bet = 0
-            player.has_acted = False
-        # Trouver le premier joueur éligible (à partir du small blind)
-        start = (self.dealer_pos + 1) % len(self.players) if self.players else 0
-        idx = start
-        for _ in range(len(self.players)):
-            if not self.players[idx].folded and not self.players[idx].all_in:
-                self.current_player = idx
-                break
-            idx = (idx + 1) % len(self.players)
-        else:
-            self.current_player = start
 
     def showdown(self):
         """Gérer la phase de showdown: déterminer le gagnant et stocker le résultat sans préparer la main suivante ici."""
@@ -485,6 +501,8 @@ class PokerGame:
 
     def to_dict(self, current_player_id=None):
         active_players = [p for p in self.players if p.stack > 0 and p.connected]
+        # On peut démarrer une nouvelle main uniquement si la main n'est pas en cours
+        phase_allows_new_hand = self.phase in (GamePhase.WAITING, GamePhase.SHOWDOWN)
         return {
             'id': self.id,
             'players': [p.to_dict(hide_hand=(p.id != current_player_id)) for p in self.players],
@@ -494,8 +512,8 @@ class PokerGame:
             'phase': self.phase.value,
             'current_player': self.current_player,
             'dealer_pos': self.dealer_pos,
-            # Nouveau: le front peut désactiver le bouton "Démarrer une main"
-            'can_start_new_hand': len(active_players) >= 2
+            'hand_number': self.hand_number,
+            'can_start_new_hand': phase_allows_new_hand and len(active_players) >= 2
         }
 
 def cleanup_games():
@@ -569,6 +587,25 @@ def game(game_id):
     if game_id not in games:
         return redirect(url_for('index'))
     return render_template('game.html', game_id=game_id)
+
+@app.get('/api/games')
+def list_games():
+    """Lister les parties ouvertes (au moins 1 joueur)."""
+    result = []
+    for gid, game in games.items():
+        if not game.players:
+            continue
+        result.append({
+            'id': gid,
+            'players': len(game.players),
+            'connected': sum(1 for p in game.players if p.connected),
+            'phase': game.phase.value,
+            'host': (game.players[0].name if game.players else ''),
+            'can_join': len(game.players) < game.max_players,
+        })
+    # Trier: plus de connectés d'abord, puis nb joueurs, puis id
+    result.sort(key=lambda g: (-g['connected'], -g['players'], g['id']))
+    return jsonify({'games': result})
 
 @socketio.on('connect')
 def handle_connect():
@@ -679,6 +716,19 @@ def handle_join_game(data):
     result = game.add_player(player_id, player_name.strip())
 
     if result in ["added", "reconnected"]:
+        # Si une main est en cours, marquer ce joueur comme inéligible pour la main actuelle
+        if game.phase not in (GamePhase.WAITING, GamePhase.SHOWDOWN):
+            # Inéligible jusqu'à la prochaine main: déjà réglé via eligible_from_hand
+            # Le marquer foldé pour la main en cours pour éviter toute action
+            for p in game.players:
+                if p.id == player_id:
+                    p.folded = True
+                    p.all_in = False
+                    p.hand = []
+                    p.current_bet = 0
+                    p.total_bet = 0
+                    p.has_acted = True
+                    break
         join_room(game_id)
         player_game_mapping[player_id] = game_id
         emit('game_joined', {'game_id': game_id, 'player_id': player_id})
@@ -700,6 +750,11 @@ def handle_start_game(data):
 
     game = games[game_id]
 
+    # Empêcher le démarrage si une main est déjà en cours
+    if game.phase not in (GamePhase.WAITING, GamePhase.SHOWDOWN):
+        emit('error', {'message': 'Une main est déjà en cours'})
+        return
+
     # Empêcher le démarrage si moins de 2 joueurs peuvent miser
     eligible = [p for p in game.players if p.stack > 0 and p.connected]
     if len(eligible) < 2:
@@ -715,7 +770,7 @@ def handle_start_game(data):
                 socketio.emit('hand_dealt', {
                     'hand': [str(card) for card in player.hand]
                 }, room=player.id)
-        # Message global + résultat si fin instantanée (all-in préflop)
+        # En cas de fin instantanée (all-in), ne pas auto-démarrer une nouvelle main
         if game.phase == GamePhase.SHOWDOWN and game.last_winner:
             try:
                 socketio.emit('table_message', {'text': 'All‑in — révélation automatique des cartes'}, room=game_id)
@@ -725,10 +780,6 @@ def handle_start_game(data):
                 socketio.emit('hand_result', game.last_winner, room=game_id)
             except Exception as e:
                 print(f"[EMIT] hand_result (instant) error: {e}")
-            try:
-                socketio.start_background_task(schedule_next_hand, game_id, NEXT_HAND_DELAY_SECONDS)
-            except Exception as e:
-                print(f"[TASK] schedule_next_hand (instant) error: {e}")
         print(f"Partie {game_id} commencée")
     else:
         emit('error', {'message': "Impossible de démarrer: pas assez de joueurs capables de miser"})
@@ -744,6 +795,12 @@ def handle_player_action(data):
         return
 
     game = games[game_id]
+
+    # Interdire toute action si aucune main n'est en cours
+    if game.phase in (GamePhase.WAITING, GamePhase.SHOWDOWN):
+        emit('error', {'message': "La main n'est pas en cours. Lancez 'Nouvelle main' pour distribuer."})
+        return
+
     player_id = sio_session.get('player_id')
 
     # Trouver le joueur
@@ -842,22 +899,17 @@ def handle_player_action(data):
 
     # Notifications et mises à jour
     if hand_ended:
-        # Message global si la fin résulte d'un all-in auto reveal
         if all_in_auto:
             try:
                 socketio.emit('table_message', {'text': 'All‑in — révélation automatique des cartes'}, room=game_id)
             except Exception as e:
                 print(f"[EMIT] table_message error: {e}")
-        # Informer du gagnant
         try:
             socketio.emit('hand_result', game.last_winner, room=game_id)
         except Exception as e:
             print(f"[EMIT] hand_result error: {e}")
-        # Planifier la prochaine main
-        try:
-            socketio.start_background_task(schedule_next_hand, game_id, NEXT_HAND_DELAY_SECONDS)
-        except Exception as e:
-            print(f"[TASK] schedule_next_hand error: {e}")
+        # Ne pas auto-planifier la prochaine main; laisser le bouton "Nouvelle main"
+        socketio.emit('game_update', game.to_dict(), room=game_id)
     else:
         socketio.emit('game_update', game.to_dict(), room=game_id)
 
@@ -881,6 +933,8 @@ def handle_leave_game(data):
     socketio.emit('game_update', game.to_dict(), room=game_id)
     print(f"Joueur {player_id} a quitté la partie {game_id}")
 
+# Supprimer les auto‑enchaînements dans schedule_next_hand et ne plus l'appeler automatiquement
+# (Conservé pour référence, mais non utilisé)
 def schedule_next_hand(game_id: str, delay: int = None):
     """Attendre un délai avant de préparer et éventuellement démarrer la prochaine main."""
     d = delay if delay is not None else NEXT_HAND_DELAY_SECONDS

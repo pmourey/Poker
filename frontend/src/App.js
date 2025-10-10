@@ -5,6 +5,18 @@ import socket from './socket';
 function App() {
   const [connected, setConnected] = useState(false);
   const [playerName, setPlayerName] = useState('');
+  // Charger le nom stocké localement au premier rendu (pré-remplissage pratique)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('playerName');
+      if (stored) setPlayerName(stored);
+    } catch (_) { /* ignore */ }
+  }, []);
+  // Sauvegarder le nom à chaque changement
+  useEffect(() => {
+    try { localStorage.setItem('playerName', playerName || ''); } catch (_) { /* ignore */ }
+  }, [playerName]);
+
   const [gameIdInput, setGameIdInput] = useState('');
   const [gameId, setGameId] = useState('');
   const [playerId, setPlayerId] = useState('');
@@ -15,6 +27,8 @@ function App() {
   const [handResult, setHandResult] = useState(null);
   const [tableMessage, setTableMessage] = useState(null);
   const listenersReady = useRef(false);
+  // Nouvelles: liste des parties ouvertes
+  const [openGames, setOpenGames] = useState([]);
 
   // Helpers
   const isInGame = !!gameId;
@@ -33,6 +47,29 @@ function App() {
     const me = game.players[myIndex] || {};
     return Number.isFinite(me.stack) ? me.stack : 0;
   }, [game, myIndex]);
+  // Nom affiché: prioriser le nom du serveur (dans la partie) sinon le champ saisi
+  const myName = useMemo(() => {
+    if (game && myIndex >= 0) {
+      const me = game.players?.[myIndex];
+      if (me && me.name) return me.name;
+    }
+    return playerName || '';
+  }, [game, myIndex, playerName]);
+  const myEligibleNow = useMemo(() => {
+    if (!game || myIndex < 0) return true;
+    const me = game.players?.[myIndex];
+    if (!me) return true;
+    const hn = Number(game.hand_number || 0);
+    const efh = Number(me.eligible_from_hand || 1);
+    return hn === 0 || efh <= hn; // hn=0 => pas encore démarré
+  }, [game, myIndex]);
+
+  // Nouvelles dérivées: phase d'enchères uniquement sur preflop/flop/turn/river
+  const isBettingPhase = useMemo(() => {
+    const phase = game?.phase;
+    return phase === 'preflop' || phase === 'flop' || phase === 'turn' || phase === 'river';
+  }, [game]);
+  const canActNow = isBettingPhase && isMyTurn && myCanBet;
 
   useEffect(() => {
     // Basic connection state
@@ -128,12 +165,13 @@ function App() {
     };
   }, []);
 
-  // Effacer le message de victoire après quelques secondes
-  useEffect(() => {
-    if (!handResult) return;
-    const t = setTimeout(() => setHandResult(null), 5000);
-    return () => clearTimeout(t);
-  }, [handResult]);
+  // Supprimer l'auto-hide du message de victoire: le message reste affiché
+  // jusqu'à la prochaine main (réinitialisé par l'événement 'game_started').
+  // useEffect(() => {
+  //   if (!handResult) return;
+  //   const t = setTimeout(() => setHandResult(null), 5000);
+  //   return () => clearTimeout(t);
+  // }, [handResult]);
 
   // Re-clamper la valeur de raise si le stack diminue (ou augmente en dessous de la valeur actuelle)
   useEffect(() => {
@@ -149,6 +187,33 @@ function App() {
     const t = setTimeout(() => setTableMessage(null), 4500);
     return () => clearTimeout(t);
   }, [tableMessage]);
+
+  // Charger périodiquement la liste des parties ouvertes
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/games', { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setOpenGames(Array.isArray(data?.games) ? data.games : []);
+      } catch (_) {
+        // ignorer en dev
+      }
+    };
+    load();
+    const id = setInterval(load, 7000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  const refreshOpenGames = async () => {
+    try {
+      const res = await fetch('/api/games', { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) return;
+      const data = await res.json();
+      setOpenGames(Array.isArray(data?.games) ? data.games : []);
+    } catch (_) {}
+  };
 
   const createGame = (e) => {
     e.preventDefault();
@@ -196,6 +261,7 @@ function App() {
   const canCheck = () => {
     if (!game || myIndex < 0) return false;
     if (!myCanBet) return false;
+    if (!isBettingPhase) return false;
     const me = game.players[myIndex];
     return (game.current_bet || 0) <= (me.current_bet || 0);
   };
@@ -203,13 +269,19 @@ function App() {
   const canCall = () => {
     if (!game || myIndex < 0) return false;
     if (!myCanBet) return false;
+    if (!isBettingPhase) return false;
     const me = game.players[myIndex];
     return (game.current_bet || 0) > (me.current_bet || 0);
   };
 
   return (
     <div className="App" style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>
-      <h1>Poker React + Flask</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <h1 style={{ margin: 0 }}>Poker React + Flask</h1>
+        {myName ? (
+          <div style={{ fontSize: 14, color: '#555' }}>Joueur: <strong>{myName}</strong></div>
+        ) : null}
+      </div>
       <div style={{ marginBottom: 8 }}>Etat Socket: {connected ? 'connecté' : 'déconnecté'}</div>
 
       {error && (
@@ -261,6 +333,27 @@ function App() {
               />
             </div>
             <div style={{ marginBottom: 8 }}>
+              <label>Partie en cours</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select
+                  value={gameIdInput}
+                  onChange={(e) => setGameIdInput(e.target.value)}
+                  style={{ flex: 1 }}
+                >
+                  <option value="">— Sélectionner une partie —</option>
+                  {openGames.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.id} — {g.host || 'hôte ?'} — {g.connected}/{g.players} — {g.phase}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={refreshOpenGames}>Actualiser</button>
+              </div>
+              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+                Sélectionner une partie ou entrer un ID manuellement ci‑dessous.
+              </div>
+            </div>
+            <div style={{ marginBottom: 8 }}>
               <label>ID de partie</label>
               <input
                 type="text"
@@ -279,15 +372,25 @@ function App() {
       {isInGame && (
         <div style={{ border: '1px solid #ddd', padding: 12, marginTop: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>Partie: {gameId}</h2>
-            <div>
+            <h2 style={{ margin: 0 }}>Partie: {gameId}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {myName ? <div style={{ fontSize: 14, color: '#555' }}>Joueur: <strong>{myName}</strong></div> : null}
               <button onClick={leaveGame} style={{ marginRight: 8 }}>Quitter</button>
-              <button onClick={startGame} disabled={!game?.can_start_new_hand}>Démarrer une main</button>
+              <button onClick={startGame} disabled={!game?.can_start_new_hand}>Nouvelle main</button>
             </div>
           </div>
 
           <div style={{ margin: '8px 0' }}>Phase: {game?.phase}</div>
           <div style={{ margin: '8px 0' }}>Pot: {game?.pot ?? 0}</div>
+          {!!game?.hand_number && (
+            <div style={{ margin: '8px 0', color: '#777' }}>Main n° {game.hand_number}</div>
+          )}
+
+          {!myEligibleNow && (
+            <div style={{ background: '#eef5ff', padding: 8, border: '1px solid #d6e4ff', marginBottom: 12, color: '#2f5aa8' }}>
+              Vous avez rejoint en cours de main. Vous participerez à partir de la prochaine main.
+            </div>
+          )}
 
           <div style={{ margin: '8px 0' }}>
             <strong>Board:</strong>{' '}
@@ -300,44 +403,63 @@ function App() {
 
           <div style={{ margin: '8px 0' }}>
             <strong>Ma main:</strong>{' '}
-            {myHand.length ? myHand.map((c, i) => (
-              <span key={i} style={{ marginRight: 6, padding: '2px 4px', border: '1px solid #ccc' }}>
-                {prettyCard(c)}
-              </span>
-            )) : <em>(non distribuée)</em>}
+            {myHand.length ? (
+              myHand.map((c, i) => (
+                <span key={i} style={{ marginRight: 6, padding: '2px 4px', border: '1px solid #ccc' }}>
+                  {prettyCard(c)}
+                </span>
+              ))
+            ) : (
+              <em>{myEligibleNow ? '(non distribuée)' : '(en attente de la prochaine main)'}</em>
+            )}
           </div>
 
           <div style={{ marginTop: 12 }}>
             <h3>Joueurs</h3>
             <div style={{ display: 'grid', gap: 8 }}>
-              {(game?.players || []).map((p, idx) => (
-                <div key={p.id} style={{
-                  border: '1px solid #eee', padding: 8,
-                  background: idx === game?.current_player ? '#f0fff0' : 'white'
-                }}>
-                  <div>
-                    <strong>{p.name}</strong> {p.id === playerId ? '(moi)' : ''}
-                    {p.folded ? ' - [FOLD]' : ''}
-                    {!p.connected ? ' - [déconnecté]' : ''}
-                    {!p.can_bet ? ' - [hors mise]' : ''}
+              {(game?.players || []).map((p, idx) => {
+                const hn = Number(game?.hand_number || 0);
+                const efh = Number(p?.eligible_from_hand || 1);
+                const nextHandFlag = hn > 0 && efh > hn;
+                return (
+                  <div key={p.id} style={{
+                    border: '1px solid #eee', padding: 8,
+                    background: idx === game?.current_player ? '#f0fff0' : 'white'
+                  }}>
+                    <div>
+                      <strong>{p.name}</strong> {p.id === playerId ? '(moi)' : ''}
+                      {p.folded ? ' - [FOLD]' : ''}
+                      {!p.connected ? ' - [déconnecté]' : ''}
+                      {nextHandFlag ? ' - [prochaine main]' : (!p.can_bet ? ' - [hors mise]' : '')}
+                    </div>
+                    <div>Stack: {p.stack} | Mise courante: {p.current_bet}</div>
                   </div>
-                  <div>Stack: {p.stack} | Mise courante: {p.current_bet}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           <div style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 12 }}>
             <h3>Actions</h3>
-            {!myCanBet && (
+            {!isBettingPhase && (
+              <div style={{ marginBottom: 8, color: '#888' }}>
+                Vous ne pouvez pas miser hors d'une main en cours. Cliquez sur "Nouvelle main" pour distribuer.
+              </div>
+            )}
+            {!myEligibleNow && isBettingPhase && (
+              <div style={{ marginBottom: 8, color: '#888' }}>
+                Vous avez rejoint en cours de main. Vous pourrez agir à la prochaine main.
+              </div>
+            )}
+            {!(!myEligibleNow) && !myCanBet && isBettingPhase && (
               <div style={{ marginBottom: 8, color: '#888' }}>
                 Vous ne pouvez pas miser dans cette main.
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button disabled={!isMyTurn || !canCheck()} onClick={() => act('check')}>Check</button>
-              <button disabled={!isMyTurn || !canCall()} onClick={() => act('call')}>Call</button>
-              <button disabled={!isMyTurn || !myCanBet} onClick={() => act('fold')}>Fold</button>
+              <button disabled={!canActNow || !canCheck() || !myEligibleNow} onClick={() => act('check')}>Check</button>
+              <button disabled={!canActNow || !canCall() || !myEligibleNow} onClick={() => act('call')}>Call</button>
+              <button disabled={!canActNow || !myEligibleNow} onClick={() => act('fold')}>Fold</button>
               <div>
                 <input
                   type="number"
@@ -350,9 +472,9 @@ function App() {
                   min={0}
                   max={myStack || 0}
                   style={{ width: 100, marginRight: 8 }}
-                  disabled={!isMyTurn || !myCanBet}
+                  disabled={!canActNow || !myEligibleNow}
                 />
-                <button disabled={!isMyTurn || !myCanBet || (raiseAmount || 0) <= 0} onClick={() => act('raise', raiseAmount)}>Raise</button>
+                <button disabled={!canActNow || !myEligibleNow || (raiseAmount || 0) <= 0} onClick={() => act('raise', raiseAmount)}>Raise</button>
               </div>
             </div>
           </div>
