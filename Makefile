@@ -4,9 +4,13 @@ SHELL := /bin/bash
 SECRET_KEY ?= change-me-in-prod
 HOST ?= 0.0.0.0
 PORT ?= 5000
+FRONTEND_PORT ?= 3000
+FLASK_LOG_ACCESS ?= 0
 
 # Interpréteur Python (surchargable):
 PY ?= python3
+# Gestionnaire Node (surchargable):
+NPM_BIN ?= npm
 # Délai d'attente après démarrage serveur avant test (secondes):
 WAIT ?= 3
 
@@ -102,3 +106,27 @@ smoke-remote-verbose:
 	  echo "[smoke-remote-verbose] Échec du smoke test distant. Vérifiez les logs WSGI sur PythonAnywhere (onglet Web > View logs)."; \
 	  exit 1; \
 	fi
+
+# Démarrage combiné: backend + frontend (mode direct par défaut)
+.PHONY: dev dev-proxy dev-polling dev-ws
+dev:
+	@echo "[make] Dev (backend+frontend — direct)"
+	@HOST=$(HOST) PORT=$(PORT) FRONTEND_PORT=$(FRONTEND_PORT) FLASK_LOG_ACCESS=$(FLASK_LOG_ACCESS) PY=$(PY) NPM_BIN=$(NPM_BIN) CLIENT_MODE=direct bash scripts/dev.sh
+
+dev-proxy:
+	@echo "[make] Dev (backend+frontend — proxy CRA)"
+	@HOST=$(HOST) PORT=$(PORT) FRONTEND_PORT=$(FRONTEND_PORT) FLASK_LOG_ACCESS=$(FLASK_LOG_ACCESS) PY=$(PY) NPM_BIN=$(NPM_BIN) CLIENT_MODE=proxy bash scripts/dev.sh
+
+# Variante directe avec polling forcé côté client
+# Utile si votre réseau/hébergeur bloque les WebSockets
+
+dev-polling:
+	@echo "[make] Dev (backend+frontend — direct, polling only)"
+	@HOST=$(HOST) PORT=$(PORT) FRONTEND_PORT=$(FRONTEND_PORT) FLASK_LOG_ACCESS=$(FLASK_LOG_ACCESS) PY=$(PY) NPM_BIN=$(NPM_BIN) CLIENT_MODE=direct REACT_APP_SIO_POLLING_ONLY=1 bash scripts/dev.sh
+
+# Variante proxy avec WebSocket forcé de bout en bout
+# Nécessite eventlet (ou gevent) installé — déjà présent dans requirements.txt
+
+dev-ws:
+	@echo "[make] Dev (backend+frontend — proxy CRA, WebSocket forcé)"
+	@HOST=$(HOST) PORT=$(PORT) FRONTEND_PORT=$(FRONTEND_PORT) FLASK_LOG_ACCESS=$(FLASK_LOG_ACCESS) PY=$(PY) NPM_BIN=$(NPM_BIN) CLIENT_MODE=proxy WEBSOCKET_ENABLED=1 ALLOW_UPGRADES=1 SOCKETIO_ASYNC_MODE=eventlet REACT_APP_PROXY_SOCKETIO_WS=1 bash scripts/dev.sh

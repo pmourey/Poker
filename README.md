@@ -48,6 +48,58 @@ Références utiles:
 Astuce: en dev, accédez à l’UI sur http://localhost:3000 (le proxy redirige vers Flask). Le build statique est servi sur http://localhost:5000 quand présent.
 
 
+## Démarrage combiné (full‑dev)
+
+Pour lancer backend + frontend en une commande:
+
+- Direct (client connecté directement au backend Socket.IO, pas de proxy WS CRA):
+```bash
+make dev
+```
+- Via le proxy CRA (utile si vous voulez tester le proxy /socket.io et /api):
+```bash
+make dev-proxy
+```
+- Polling only (client direct, WebSockets désactivés côté client — utile si votre réseau bloque WS):
+```
+make dev-polling
+```
+- WS forcé via proxy CRA (tester l’upgrade WebSocket de bout en bout):
+make dev-ws
+
+Variables utiles (surchargables en ligne de commande):
+- HOST et PORT: où écoute le backend Flask (défauts: 0.0.0.0:5000)
+- FRONTEND_PORT: port du serveur CRA (défaut: 3000)
+- FLASK_LOG_ACCESS: 0 pour couper les logs d’accès Werkzeug (défaut: 0)
+- PY: binaire Python (défaut: python3)
+- NPM_BIN: binaire npm (défaut: npm)
+
+Exemples:
+```bash
+# Backend sur 127.0.0.1:5001, frontend sur 3001
+HOST=127.0.0.1 PORT=5001 FRONTEND_PORT=3001 make dev
+
+# Lancer en mode proxy CRA
+HOST=127.0.0.1 PORT=5000 make dev-proxy
+
+# Lancer en mode direct avec polling forcé côté client
+make dev-polling
+
+# Lancer via proxy avec WS forcé
+make dev-ws
+```
+
+Notes:
+- Le mode direct équivaut à `npm run dev:direct` côté frontend: `REACT_APP_SOCKET_URL` est fixé à `http://localhost:${PORT}` et `REACT_APP_PROXY_SOCKETIO_WS=0`.
+- Le mode polling only force `REACT_APP_SIO_POLLING_ONLY=1` côté client (pas de tentative WebSocket).
+- Le mode WS forcé configure côté serveur `WEBSOCKET_ENABLED=1`, `ALLOW_UPGRADES=1`, `SOCKETIO_ASYNC_MODE=eventlet` et côté client `REACT_APP_PROXY_SOCKETIO_WS=1`. La dépendance `eventlet` est déjà listée dans `requirements.txt`.
+- Le script de lancement est `scripts/dev.sh`. S’il n’est pas exécutable, rendez‑le exécutable:
+```bash
+chmod +x scripts/dev.sh
+```
+- Arrêt coordonné: Ctrl+C arrête backend et frontend.
+
+
 ## Alternatives et réglages fins
 
 Pour éliminer les alertes récurrentes côté Flask (ex: `GET /ws 404`) et les erreurs WebSocket côté React/CRA (ex: `[HPM] WebSocket error: write after end`), voici des options pratiques.
@@ -107,8 +159,3 @@ python3 start_server.py
   - Inoffensif (heartbeat WDS). Déjà filtré en dev; sinon exportez `FLASK_LOG_ACCESS=0`.
 - Les WebSockets ne s’établissent pas:
   - Vérifiez l’installation d’`eventlet` (ou `gevent`) et exportez `WEBSOCKET_ENABLED=1`.
-
-
-## Statut
-- Prototype actif pour parties locales et démonstrations.
-- Contributions bienvenues pour: évaluation réelle des mains, side‑pots, spectateurs, persistance, UI/UX, tests.
