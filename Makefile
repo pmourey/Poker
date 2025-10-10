@@ -29,8 +29,9 @@ smoke:
 	SERVER_PID=$$!; \
 	echo $$SERVER_PID > .smoke_server.pid; \
 	sleep $(WAIT); \
-	echo "[smoke] Exécution du smoke test contre http://$$SMOKE_HOST:$$SMOKE_PORT ..."; \
-	SMOKE_SERVER_URL="http://$$SMOKE_HOST:$$SMOKE_PORT" $(PY) scripts/smoke_socketio.py; \
+	TARGET_URL=$${SMOKE_SERVER_URL:-http://$$SMOKE_HOST:$$SMOKE_PORT}; \
+	echo "[smoke] Exécution du smoke test contre $$TARGET_URL ..."; \
+	SMOKE_SERVER_URL="$$TARGET_URL" $(PY) scripts/smoke_socketio.py; \
 	STATUS=$$?; \
 	echo "[smoke] Arrêt du serveur (PID=$$SERVER_PID)"; \
 	kill $$SERVER_PID >/dev/null 2>&1 || true; \
@@ -61,8 +62,9 @@ smoke-no-redis:
 	SERVER_PID=$$!; \
 	echo $$SERVER_PID > .smoke_server.pid; \
 	sleep $(WAIT); \
-	echo "[smoke-no-redis] Exécution du smoke test contre http://$$SMOKE_HOST:$$SMOKE_PORT ..."; \
-	SMOKE_SERVER_URL="http://$$SMOKE_HOST:$$SMOKE_PORT" $(PY) scripts/smoke_socketio.py; \
+	TARGET_URL=$${SMOKE_SERVER_URL:-http://$$SMOKE_HOST:$$SMOKE_PORT}; \
+	echo "[smoke-no-redis] Exécution du smoke test contre $$TARGET_URL ..."; \
+	SMOKE_SERVER_URL="$$TARGET_URL" $(PY) scripts/smoke_socketio.py; \
 	STATUS=$$?; \
 	echo "[smoke-no-redis] Arrêt du serveur (PID=$$SERVER_PID)"; \
 	kill $$SERVER_PID >/dev/null 2>&1 || true; \
@@ -77,5 +79,26 @@ smoke-verbose-no-redis:
 	else \
 	  echo "[smoke-verbose-no-redis] Échec du smoke test — extrait du journal serveur:"; \
 	  tail -n 200 /tmp/poker_smoke_server.log || true; \
+	  exit 1; \
+	fi
+
+# Smoke test contre une instance distante (ex: PythonAnywhere) — ne démarre pas de serveur local
+.PHONY: smoke-remote
+smoke-remote:
+	@set -euo pipefail; \
+	if [ -z "$$SMOKE_SERVER_URL" ]; then \
+	  echo "[smoke-remote] ERREUR: définissez SMOKE_SERVER_URL (ex: https://<user>.pythonanywhere.com)"; \
+	  exit 2; \
+	fi; \
+	echo "[smoke-remote] Exécution du smoke test contre $$SMOKE_SERVER_URL ..."; \
+	$(PY) scripts/smoke_socketio.py
+
+.PHONY: smoke-remote-verbose
+smoke-remote-verbose:
+	@set -euo pipefail; \
+	if $(MAKE) -s smoke-remote; then \
+	  exit 0; \
+	else \
+	  echo "[smoke-remote-verbose] Échec du smoke test distant. Vérifiez les logs WSGI sur PythonAnywhere (onglet Web > View logs)."; \
 	  exit 1; \
 	fi
