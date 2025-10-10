@@ -17,6 +17,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "dev:direct": "REACT_APP_SOCKET_URL=${REACT_APP_SOCKET_URL:-http://localhost:5000} REACT_APP_PROXY_SOCKETIO_WS=0 react-scripts start",
     "build": "react-scripts build",
     "postbuild": "cp build/index.html build/404.html",
     "test": "react-scripts test",

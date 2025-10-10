@@ -48,6 +48,67 @@ Références utiles:
 Astuce: en dev, accédez à l’UI sur http://localhost:3000 (le proxy redirige vers Flask). Le build statique est servi sur http://localhost:5000 quand présent.
 
 
+## Alternatives et réglages fins
+
+Pour éliminer les alertes récurrentes côté Flask (ex: `GET /ws 404`) et les erreurs WebSocket côté React/CRA (ex: `[HPM] WebSocket error: write after end`), voici des options pratiques.
+
+1) Lancer le frontend en connexion directe (sans proxy WebSocket CRA)
+- Avantage: supprime les erreurs HPM liées au proxy WS; le client se connecte directement au backend Socket.IO.
+- Commandes:
+```bash
+cd frontend
+npm run dev:direct
+# ou pour surcharger l’URL côté client
+REACT_APP_SOCKET_URL=http://127.0.0.1:5000 npm run dev:direct
+```
+- Détails: `dev:direct` définit `REACT_APP_SOCKET_URL` (par défaut http://localhost:5000) et `REACT_APP_PROXY_SOCKETIO_WS=0`.
+
+2) Continuer avec le proxy CRA, mais ajuster le WS
+- Par défaut, `npm start` active le proxy WS si aucune `REACT_APP_SOCKET_URL` n’est définie.
+- Pour désactiver le WS du proxy (et donc éviter les erreurs HPM):
+```bash
+cd frontend
+REACT_APP_PROXY_SOCKETIO_WS=0 npm start
+```
+- Pour forcer le WS côté client même via proxy, laissez `REACT_APP_PROXY_SOCKETIO_WS` à 1 et assurez‑vous que le backend supporte WS (voir point 4).
+
+3) Forcer le polling côté client Socket.IO
+- Utile si votre réseau/hébergeur bloque les WebSockets (VPN, proxy d’entreprise, PaaS):
+```bash
+cd frontend
+REACT_APP_SIO_POLLING_ONLY=1 npm run dev:direct
+# ou avec le proxy CRA
+REACT_APP_SIO_POLLING_ONLY=1 npm start
+```
+
+4) Activer correctement WebSocket côté serveur Flask‑SocketIO
+- Installer un worker asynchrone compatible WS et activer les upgrades:
+```bash
+pip install eventlet  # ou gevent
+```
+- Variables utiles:
+  - `WEBSOCKET_ENABLED=1` pour activer WS explicitement (sinon auto si eventlet/gevent présent)
+  - `ALLOW_UPGRADES=1` pour autoriser l’upgrade polling→websocket
+  - `SOCKETIO_ASYNC_MODE=eventlet|gevent|threading` pour choisir le mode
+
+5) Réduire/masquer le bruit des logs côté Flask
+- Couper les logs d’accès Werkzeug:
+```bash
+export FLASK_LOG_ACCESS=0
+python3 start_server.py
+```
+- Par défaut, certaines lignes d’accès vers `/ws` et `/socket.io` sont filtrées afin d’alléger la console en dev.
+
+6) Dépannage rapide
+- Vous voyez `[HPM] WebSocket error: write after end` dans la console React:
+  - Lancez `npm run dev:direct`, ou bien `REACT_APP_PROXY_SOCKETIO_WS=0 npm start`.
+  - Ou forcez le polling: `REACT_APP_SIO_POLLING_ONLY=1`.
+- Vous voyez des `GET /ws 404` dans la console Flask:
+  - Inoffensif (heartbeat WDS). Déjà filtré en dev; sinon exportez `FLASK_LOG_ACCESS=0`.
+- Les WebSockets ne s’établissent pas:
+  - Vérifiez l’installation d’`eventlet` (ou `gevent`) et exportez `WEBSOCKET_ENABLED=1`.
+
+
 ## Statut
 - Prototype actif pour parties locales et démonstrations.
 - Contributions bienvenues pour: évaluation réelle des mains, side‑pots, spectateurs, persistance, UI/UX, tests.

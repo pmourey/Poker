@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict
 from enum import Enum
 import os
+import logging
 from dotenv import load_dotenv
 from pathlib import Path
 # Importer la session Socket.IO côté serveur (indépendante des cookies)
@@ -26,6 +27,25 @@ if not _loaded:
 app = Flask(__name__, static_folder=None)
 # Lire le secret depuis l’env, avec fallback pour dev
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
+
+# --- Filtrage des logs d’accès werkzeug ---
+# Permet de couper entièrement les logs d’accès si FLASK_LOG_ACCESS=0
+if os.environ.get('FLASK_LOG_ACCESS', '1') == '0':
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+# Sinon, filtrer certaines routes bruyantes (/ws, /socket.io)
+class _WerkzeugNoiseFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        # Ignorer les accès récurrents aux endpoints WS et polling
+        noisy = (
+            'GET /ws' in msg or
+            'GET /socket.io' in msg or
+            'POST /socket.io' in msg
+        )
+        return not noisy
+
+logging.getLogger('werkzeug').addFilter(_WerkzeugNoiseFilter())
 
 # Configuration SocketIO: auto-détecter eventlet/gevent pour activer WebSocket par défaut
 # Déterminer async_mode si non fourni via env

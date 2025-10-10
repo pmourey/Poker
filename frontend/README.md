@@ -2,6 +2,16 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Dev direct (sans proxy CRA)
+
+Pour connecter le frontend directement au backend Socket.IO (sans passer par le proxy WebSocket de CRA), utilisez:
+
+- `npm run dev:direct` — lance CRA en définissant `REACT_APP_SOCKET_URL` (par défaut `http://localhost:5000`) et `REACT_APP_PROXY_SOCKETIO_WS=0`.
+- Vous pouvez surcharger l’URL dans votre shell:
+  - macOS/Linux (bash/zsh): `REACT_APP_SOCKET_URL=http://127.0.0.1:5000 npm run dev:direct`
+
+Le script désactive le proxy WS de CRA et le client se connecte directement à l’URL fournie (voir `src/socket.js`). Le script standard `npm start` continue d’utiliser le proxy défini dans `src/setupProxy.js`.
+
 ## Available Scripts
 
 In the project directory, you can run:

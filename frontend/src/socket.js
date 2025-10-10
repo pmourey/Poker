@@ -14,9 +14,9 @@ const forcePolling = process.env.REACT_APP_SIO_POLLING_ONLY === '1';
 // On n'utilise un endpoint explicite que si REACT_APP_SOCKET_URL est défini.
 const endpoint = envUrl || undefined;
 
-// Transports: WebSocket direct par défaut
-let transports = ['websocket'];
-let disableUpgrade = true; // pas de handshake polling
+// Transports: autoriser websocket + polling par défaut avec upgrade pour une meilleure résilience en dev
+let transports = ['websocket', 'polling'];
+let disableUpgrade = false; // autoriser le handshake polling -> websocket
 
 // Forcer le polling sur certains hôtes si nécessaire (ex: pythonanywhere bloque WS)
 try {
@@ -39,7 +39,7 @@ if (forcePolling) {
 const socket = io(endpoint, {
   withCredentials: false,
   transports,
-  upgrade: !disableUpgrade && transports.includes('polling'),
+  upgrade: !disableUpgrade,
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 500,
