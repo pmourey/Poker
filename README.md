@@ -145,3 +145,49 @@ Variables `.env` pertinentes:
 - `PING_TIMEOUT=60`
 - `REDIS_URL=` (laisser vide si single worker)
 
+---
+
+## Accéder au serveur React (CRA) via un domaine externe (corriger "Invalid Host header")
+
+Si vous exposez le serveur de développement React (npm start) derrière un domaine ou un port externe (par ex. philippe.mourey.com:50000), Webpack Dev Server peut refuser la requête avec "Invalid Host header".
+
+Solution (développement uniquement): créez `frontend/.env.development.local` et redémarrez `npm start` depuis `frontend/`.
+
+Contenu recommandé:
+
+- DANGEROUSLY_DISABLE_HOST_CHECK=true — désactive la vérification d’hôte côté Webpack Dev Server
+- HOST=0.0.0.0 — écoute sur toutes les interfaces
+- PORT=50000 — alignez le port avec votre redirection/NAT (ou laissez 3000 et mappez 50000→3000 sur votre routeur)
+
+Précautions:
+- N’utilisez ces réglages qu’en DEV sur un réseau de confiance. Ne les commitez pas; `.env.development.local` est ignoré par Git.
+- En cas de proxy/TLS ou port public ≠ port local, vous pouvez aussi régler le Hot Reload (HMR) avec:
+  - `WDS_SOCKET_HOST=<votre-domaine>`
+  - `WDS_SOCKET_PORT=<votre-port-public>`
+  - `WDS_SOCKET_PATH=/ws` (si vous avez modifié le chemin)
+
+Étapes types:
+1) Créez/éditez `frontend/.env.development.local` avec:
+```
+DANGEROUSLY_DISABLE_HOST_CHECK=true
+HOST=0.0.0.0
+PORT=50000
+```
+2) Redémarrez le serveur:
+```
+cd frontend
+npm start
+```
+3) Testez depuis l’extérieur:
+```
+curl -i 'http://<votre-domaine>:50000/'
+```
+Vous ne devez plus voir "Invalid Host header".
+
+---
+
+## Sécurité
+
+- Ne pas exposer le serveur de développement (npm start) en production. Utiliser plutôt le build React servi par Flask (Option B).
+- Vérifiez les règles de pare-feu et de sécurité réseau si vous ne parvenez pas à accéder au serveur depuis l’extérieur.
+- Surveillez les logs pour toute activité suspecte, surtout si vous désactivez des vérifications de sécurité comme `DANGEROUSLY_DISABLE_HOST_CHECK`.
