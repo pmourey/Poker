@@ -114,6 +114,12 @@ card_values = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
 
 NEXT_HAND_DELAY_SECONDS = int(os.environ.get('NEXT_HAND_DELAY_SECONDS', '4'))
 
+# --- NEW: import de l'évaluateur de mains ---
+try:
+    from hand_eval import evaluate_best
+except Exception as _e:
+    evaluate_best = None  # sera vérifié à l'usage
+
 @dataclass
 class Card:
     value: int
@@ -430,23 +436,65 @@ class PokerGame:
         self.reset_betting_round()
 
     def showdown(self):
-        """Gérer la phase de showdown: déterminer le gagnant et stocker le résultat sans préparer la main suivante ici."""
+        """Gérer la phase de showdown: déterminer le gagnant et stocker le résultat avec les mains évaluées."""
         self.phase = GamePhase.SHOWDOWN
-        active_players = [p for p in self.players if not p.folded]
-        if active_players:
-            winner = active_players[0]
-            amount = self.pot
-            winner.stack += self.pot
-            self.last_winner = {
-                'player_id': winner.id,
-                'name': winner.name,
-                'amount': amount,
-                'reason': 'showdown'
+        # Évaluation des mains pour tous les joueurs (même couchés, pour affichage complet)
+        hands_info = []
+        can_eval = (evaluate_best is not None and len(self.community_cards) >= 3)
+        for p in self.players:
+            info = {
+                'player_id': p.id,
+                'name': p.name,
+                'cards': [str(c) for c in p.hand],
+                'folded': p.folded,
+                'all_in': p.all_in,
+                'best': None,
+                'category': None,
+                'rank_key': None,
             }
-            print(f"Fin de main - Gagnant: {winner.name}, pot: {self.pot}")
-            self.pot = 0
-        else:
-            self.last_winner = {}
+            if can_eval and p.hand:
+                try:
+                    res = evaluate_best(self.community_cards + p.hand)
+                    info['best'] = res.get('name')
+                    info['category'] = res.get('category')
+                    info['rank_key'] = res.get('key')
+                except Exception:
+                    pass
+            hands_info.append(info)
+
+        # Déterminer le(s) gagnant(s) parmi les joueurs non couchés
+        active_infos = [h for h in hands_info if not h['folded']]
+        winner_ids: List[str] = []
+        if active_infos:
+            # Utiliser rank_key si présent, sinon prioriser l'ordre d'apparition
+            ranked = [h for h in active_infos if h['rank_key'] is not None]
+            if ranked:
+                ranked.sort(key=lambda h: h['rank_key'])
+                best = ranked[-1]['rank_key']
+                winner_ids = [h['player_id'] for h in ranked if h['rank_key'] == best]
+            else:
+                # Aucun calcul possible: premier actif gagne (fallback)
+                winner_ids = [active_infos[0]['player_id']]
+
+        # Attribution du pot: garder le comportement simple d'un seul gagnant (premier des ex-aequo)
+        amount = self.pot
+        if winner_ids:
+            win_id = winner_ids[0]
+            winner_player = next((p for p in self.players if p.id == win_id), None)
+            if winner_player:
+                winner_player.stack += self.pot
+        self.pot = 0
+
+        self.last_winner = {
+            'player_id': (winner_ids[0] if winner_ids else None),
+            'name': (next((p.name for p in self.players if p.id == (winner_ids[0] if winner_ids else '')), '')),
+            'amount': amount,
+            'reason': 'showdown',
+            'winners': winner_ids,
+            'hands': hands_info,
+            'community': [str(c) for c in self.community_cards],
+        }
+        print(f"Fin de main - Gagnant(s): {self.last_winner.get('winners')} pot: {amount}")
         return True
 
     def prepare_next_hand(self):
@@ -871,11 +919,39 @@ def handle_player_action(data):
             winner.stack += game.pot
             game.pot = 0
             game.phase = GamePhase.SHOWDOWN
+            # Construire un résultat enrichi similaire à showdown()
+            hands_info = []
+            can_eval = (evaluate_best is not None)
+            for p in game.players:
+                info = {
+                    'player_id': p.id,
+                    'name': p.name,
+                    'cards': [str(c) for c in p.hand],
+                    'folded': p.folded,
+                    'all_in': p.all_in,
+                    'best': None,
+                    'category': None,
+                    'rank_key': None,
+                }
+                if can_eval and p.hand:
+                    try:
+                        res = evaluate_best(game.community_cards + p.hand)
+                        info['best'] = res.get('name')
+                        info['category'] = res.get('category')
+                        info['rank_key'] = res.get('key')
+                    except Exception:
+                        pass
+                hands_info.append(info)
+            # Gagnant selon la règle de fold: le seul restant
+            winners = [winner.id]
             game.last_winner = {
                 'player_id': winner.id,
                 'name': winner.name,
                 'amount': amount,
-                'reason': 'all_folded'
+                'reason': 'all_folded',
+                'winners': winners,
+                'hands': hands_info,
+                'community': [str(c) for c in game.community_cards],
             }
         else:
             game.phase = GamePhase.SHOWDOWN

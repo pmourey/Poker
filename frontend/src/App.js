@@ -142,10 +142,8 @@ function App() {
       });
 
       socket.on('hand_result', (result) => {
-        // result: { player_id, name, amount, reason }
+        // result: { player_id, name, amount, reason, winners?:[], hands?:[], community?:[] }
         setHandResult(result || null);
-        // Ne pas effacer immédiatement mes cartes; elles seront réinitialisées sur 'game_started'
-        // setMyHand([]);
       });
 
       socket.on('table_message', (payload) => {
@@ -298,7 +296,32 @@ function App() {
 
       {handResult && (
         <div style={{ background: '#e6ffe6', padding: 10, border: '1px solid #b3ffb3', marginBottom: 12 }}>
-          Main terminée — Gagnant: <strong>{handResult.name || 'Inconnu'}</strong> (+{handResult.amount ?? 0})
+          <div>
+            Main terminée — Gagnant: <strong>{handResult.name || 'Inconnu'}</strong> (+{handResult.amount ?? 0})
+          </div>
+          {Array.isArray(handResult?.hands) && handResult.hands.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Mains des joueurs:</div>
+              <ul style={{ listStyle: 'none', paddingLeft: 0, margin: 0 }}>
+                {handResult.hands.map((h) => (
+                  <li key={h.player_id} style={{ padding: '4px 0', borderBottom: '1px dashed #cfe9cf' }}>
+                    <span style={{ display: 'inline-block', minWidth: 120 }}>
+                      {h.name || h.player_id}
+                      {Array.isArray(handResult.winners) && handResult.winners.includes(h.player_id) ? ' (gagnant)' : ''}
+                    </span>
+                    <span style={{ marginLeft: 8, color: h.folded ? '#a00' : '#070' }}>
+                      {h.folded ? 'Abandon' : (h.best || '—')}
+                    </span>
+                    {!h.folded && Array.isArray(h.cards) && h.cards.length > 0 && (
+                      <span style={{ marginLeft: 10, color: '#555' }}>
+                        [{h.cards.join(' ')}]
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
