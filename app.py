@@ -22,7 +22,8 @@ if not _loaded:
     if _fallback.exists():
         load_dotenv(_fallback)
 
-app = Flask(__name__)
+# Créer l’app Flask en désactivant la route statique par défaut
+app = Flask(__name__, static_folder=None)
 # Lire le secret depuis l’env, avec fallback pour dev
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
 
@@ -639,6 +640,8 @@ def react_static(filename):
 @app.route('/manifest.json')
 @app.route('/asset-manifest.json')
 @app.route('/favicon.ico')
+@app.route('/logo192.png')
+@app.route('/logo512.png')
 def react_assets():
     # Servir certains assets à la racine du build React
     requested = request.path.lstrip('/')

@@ -10,31 +10,24 @@ const isDev = process.env.NODE_ENV === 'development';
 // Ne forcer le polling que si explicitement demandé
 const forcePolling = process.env.REACT_APP_SIO_POLLING_ONLY === '1';
 
-// Si servi par Flask (port 5000), on garde same-origin (endpoint undefined)
-const isFlaskOrigin = isBrowser && window.location && window.location.port === '5000';
+// Endpoint: par défaut same-origin (undefined). Permet au build servi par Flask de fonctionner sur n'importe quel domaine/port.
+// On n'utilise un endpoint explicite que si REACT_APP_SOCKET_URL est défini.
+const endpoint = envUrl || undefined;
 
-// En dev CRA, préférer same-origin pour exploiter le proxy CRA → Flask
-// Fallback (production statique en local): cibler explicitement http://localhost:5000
-const defaultDevUrl = 'http://localhost:5000';
-
-// Choix de l’endpoint
-// - envUrl si défini
-// - sinon same-origin en dev CRA et si servi par Flask
-// - sinon fallback explicite (ex: build statique pointant sur un backend local)
-const endpoint = envUrl || (isFlaskOrigin ? undefined : (isDev ? undefined : defaultDevUrl));
-
-// Détecter PythonAnywhere pour forcer le transport "polling"
+// Transports: WebSocket direct par défaut
 let transports = ['websocket'];
-let disableUpgrade = true; // WebSocket direct, sans handshake polling
+let disableUpgrade = true; // pas de handshake polling
+
+// Forcer le polling sur certains hôtes si nécessaire (ex: pythonanywhere bloque WS)
 try {
   const targetOrigin = envUrl || (isBrowser ? window.location.origin : '');
   const url = new URL(targetOrigin);
   if (url.hostname.endsWith('pythonanywhere.com')) {
     transports = ['polling'];
-    disableUpgrade = true; // éviter toute tentative d'upgrade côté client
+    disableUpgrade = true;
   }
 } catch (e) {
-  // Fallback silencieux: garder WS-only par défaut
+  // Fallback silencieux
 }
 
 // Si explicitement forcé, basculer en polling-only
