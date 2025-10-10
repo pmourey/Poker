@@ -26,10 +26,26 @@ app = Flask(__name__)
 # Lire le secret depuis l’env, avec fallback pour dev
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'poker-secret-key-2023')
 
-# Configuration SocketIO basique (polling-only)
-SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
-PING_INTERVAL = int(os.environ.get('PING_INTERVAL', '25'))
-PING_TIMEOUT = int(os.environ.get('PING_TIMEOUT', '60'))
+# Configuration SocketIO: auto-détecter eventlet/gevent pour activer WebSocket par défaut
+# Déterminer async_mode si non fourni via env
+_env_async = os.environ.get('SOCKETIO_ASYNC_MODE')
+if _env_async:
+    SOCKETIO_ASYNC_MODE = _env_async
+else:
+    # Auto: préférer eventlet, puis gevent, sinon threading
+    try:
+        import eventlet  # noqa: F401
+        SOCKETIO_ASYNC_MODE = 'eventlet'
+    except Exception:
+        try:
+            import gevent  # noqa: F401
+            SOCKETIO_ASYNC_MODE = 'gevent'
+        except Exception:
+            SOCKETIO_ASYNC_MODE = 'threading'
+
+# Pings Engine.IO (seconds): augmenter l’intervalle par défaut pour réduire le trafic réseau
+PING_INTERVAL = int(os.environ.get('PING_INTERVAL', '60'))
+PING_TIMEOUT = int(os.environ.get('PING_TIMEOUT', '90'))  # > interval
 MESSAGE_QUEUE = os.environ.get('REDIS_URL') or None
 
 # CORS: autoriser explicitement une ou plusieurs origines si fourni
@@ -72,7 +88,7 @@ socketio = SocketIO(
 )
 
 # Petit log de configuration au démarrage
-print(f"[SocketIO] async_mode={SOCKETIO_ASYNC_MODE} websocket={WEBSOCKET_ENABLED} allow_upgrades={ALLOW_UPGRADES} cors={cors_allowed}")
+print(f"[SocketIO] async_mode={SOCKETIO_ASYNC_MODE} websocket={WEBSOCKET_ENABLED} allow_upgrades={ALLOW_UPGRADES} cors={cors_allowed} ping_interval={PING_INTERVAL}s")
 
 # Forcer les en-têtes CORS sur /socket.io/ même en cas d'erreur (ex: 500)
 @app.after_request

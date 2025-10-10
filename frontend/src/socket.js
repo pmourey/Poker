@@ -7,8 +7,8 @@ const envUrl = process.env.REACT_APP_SOCKET_URL;
 const isBrowser = typeof window !== 'undefined';
 const isDev = process.env.NODE_ENV === 'development';
 
-// Toggle pour forcer le mode polling (évite les upgrades WS en dev / derrière proxy NAT)
-const forcePolling = process.env.REACT_APP_SIO_POLLING_ONLY === '1' || isDev;
+// Ne forcer le polling que si explicitement demandé
+const forcePolling = process.env.REACT_APP_SIO_POLLING_ONLY === '1';
 
 // Si servi par Flask (port 5000), on garde same-origin (endpoint undefined)
 const isFlaskOrigin = isBrowser && window.location && window.location.port === '5000';
@@ -24,8 +24,8 @@ const defaultDevUrl = 'http://localhost:5000';
 const endpoint = envUrl || (isFlaskOrigin ? undefined : (isDev ? undefined : defaultDevUrl));
 
 // Détecter PythonAnywhere pour forcer le transport "polling"
-let transports = ['polling', 'websocket'];
-let disableUpgrade = false;
+let transports = ['websocket'];
+let disableUpgrade = true; // WebSocket direct, sans handshake polling
 try {
   const targetOrigin = envUrl || (isBrowser ? window.location.origin : '');
   const url = new URL(targetOrigin);
@@ -34,10 +34,10 @@ try {
     disableUpgrade = true; // éviter toute tentative d'upgrade côté client
   }
 } catch (e) {
-  // Fallback silencieux: garder l'ordre polling → websocket
+  // Fallback silencieux: garder WS-only par défaut
 }
 
-// En développement (ou si REACT_APP_SIO_POLLING_ONLY=1), forcer polling-only
+// Si explicitement forcé, basculer en polling-only
 if (forcePolling) {
   transports = ['polling'];
   disableUpgrade = true;
@@ -46,7 +46,7 @@ if (forcePolling) {
 const socket = io(endpoint, {
   withCredentials: false,
   transports,
-  upgrade: disableUpgrade || false,
+  upgrade: !disableUpgrade && transports.includes('polling'),
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 500,
